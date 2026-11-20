@@ -20,14 +20,45 @@ class AnswerBank(private val ctx: Context) {
 
     private val entries = mutableListOf<Entry>()
     private val learnedFile get() = File(ctx.filesDir, "learned.json")
+    private val remoteFile get() = File(ctx.filesDir, "remote_answers.json")
+    private var loadedStamp = -1L
 
     init { reload() }
 
+    /** Built-in list, replaced by the downloaded list when one exists, plus your learned answers. */
     fun reload() {
         entries.clear()
-        val builtIn = ctx.assets.open("answers.json").bufferedReader().use { it.readText() }
-        parse(builtIn, learned = false)
+        val base = remoteFile.takeIf { it.exists() }?.readText()
+            ?: ctx.assets.open("answers.json").bufferedReader().use { it.readText() }
+        try { parse(base, learned = false) } catch (e: Exception) {
+            remoteFile.delete()
+            parse(ctx.assets.open("answers.json").bufferedReader().use { it.readText() }, learned = false)
+        }
         if (learnedFile.exists()) parse(learnedFile.readText(), learned = true)
+        loadedStamp = stamp()
+    }
+
+    private fun stamp() = remoteFile.lastModified() * 31 + learnedFile.lastModified()
+
+    /** Cheap check used before each question: reload if a download or a learned answer changed the files. */
+    fun reloadIfChanged() { if (stamp() != loadedStamp) reload() }
+
+    /**
+     * Download the latest answers.json from GitHub (blocking - call off the main thread).
+     * Returns the number of entries, or throws on failure. New answers arrive without reinstalling.
+     */
+    fun downloadLatest(): Int {
+        val conn = java.net.URL(REMOTE_URL + "?t=" + System.currentTimeMillis()).openConnection() as java.net.HttpURLConnection
+        conn.connectTimeout = 10_000
+        conn.readTimeout = 15_000
+        try {
+            if (conn.responseCode != 200) throw IllegalStateException("HTTP ${conn.responseCode}")
+            val text = conn.inputStream.bufferedReader().use { it.readText() }
+            val n = JSONArray(text).length()          // validate before saving
+            if (n < 10) throw IllegalStateException("list looks too short ($n)")
+            remoteFile.writeText(text)
+            return n
+        } finally { conn.disconnect() }
     }
 
     val size get() = entries.size
@@ -80,6 +111,7 @@ class AnswerBank(private val ctx: Context) {
     fun learnedJson(): String = if (learnedFile.exists()) learnedFile.readText() else "[]"
 
     companion object {
+        const val REMOTE_URL = "https://raw.githubusercontent.com/shahzad46/QuizBot/main/app/src/main/assets/answers.json"
         private val ARTICLES = setOf("al", "an", "ar", "as", "at", "ash", "ad", "az", "surah", "surat", "sura", "the")
 
         fun norm(s: String): String {

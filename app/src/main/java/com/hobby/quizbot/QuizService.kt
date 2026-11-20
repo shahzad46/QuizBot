@@ -62,6 +62,20 @@ class QuizService : AccessibilityService() {
         log("Service connected. Answer bank: ${bank.size} entries (${bank.learnedCount} learned).")
         handler.removeCallbacks(tick)
         handler.postDelayed(tick, TICK_MS)
+        updateAnswers()
+    }
+
+    /** Fetch the latest answer list from GitHub in the background. */
+    private fun updateAnswers() {
+        Thread {
+            val msg = try {
+                val n = AnswerBank(this).downloadLatest()
+                "Answer list updated from GitHub: $n entries."
+            } catch (e: Exception) {
+                "Couldn't update answers from GitHub (${e.message}); using the saved list."
+            }
+            handler.post { log(msg); bank.reloadIfChanged() }
+        }.start()
     }
 
     override fun onDestroy() {
@@ -142,6 +156,7 @@ class QuizService : AccessibilityService() {
 
     private fun handleQuestion(nodes: List<TextNode>, check: TextNode) {
         unknownSince = 0L
+        bank.reloadIfChanged()
         val above = nodes.filter { it.rect.bottom <= check.rect.top + 5 }
         val question = above.filter { it.text.contains("?") }.maxByOrNull { it.text.length }
             ?: above.filter { it.text.length > 20 }.maxByOrNull { it.text.length }

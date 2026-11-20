@@ -71,6 +71,18 @@ class MainActivity : Activity() {
             prefs.edit().putBoolean(QuizService.KEY_DUMP, true).apply()
             Toast.makeText(this, "Now switch to the quiz screen", Toast.LENGTH_LONG).show()
         }
+        button("Update answers from GitHub") {
+            Toast.makeText(this, "Downloading...", Toast.LENGTH_SHORT).show()
+            Thread {
+                val msg = try { "Answer list updated: ${AnswerBank(this).downloadLatest()} entries." }
+                          catch (e: Exception) { "Update failed: ${e.message}" }
+                runOnUiThread {
+                    BotLog.add(this, msg)
+                    Toast.makeText(this, msg, Toast.LENGTH_LONG).show()
+                    refresh()
+                }
+            }.start()
+        }
         button("Refresh log") { refresh() }
         button("Clear log") { BotLog.clear(this); refresh() }
         button("Show learned answers") {
