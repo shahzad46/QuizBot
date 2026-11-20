@@ -96,6 +96,7 @@ class QuizService : AccessibilityService() {
             ?: return
         val options = above
             .filter { it.rect.top >= question.rect.bottom - 5 && it !== question }
+            .filter { it.text.length <= 70 && NOT_OPTIONS.none { p -> it.norm.startsWith(p) } }
             .distinctBy { it.norm }
         if (options.size < 2) return
 
@@ -191,6 +192,7 @@ class QuizService : AccessibilityService() {
             "com.google.android.inputmethod", "com.android.inputmethod", "com.miui.securitycenter",
             "com.android.settings", "com.android.permissioncontroller"
         )
+        private val NOT_OPTIONS = listOf("your key can unlock", "choose the right answer")
         private val CHECK_WORDS = setOf("check your answer", "check answer", "submit", "submit answer")
         private val NEXT_WORDS = setOf("next", "next question", "continue", "ok", "got it", "done")
     }
