@@ -102,5 +102,7 @@ class MainActivity : Activity() {
             append("\nAnswer bank: ${bank.size} entries (${bank.learnedCount} learned from you)")
         }
         logView.text = BotLog.read(this)
+        val running = prefs.getBoolean(QuizService.KEY_ENABLED, false)
+        if (toggle.isChecked != running) toggle.isChecked = running   // bot may have stopped itself
     }
 }

@@ -106,7 +106,11 @@
   "keys": [
    "age of the prophet at the time of hijra",
    "old at the time of hijra",
-   "age at hijra"
+   "age at hijra",
+   "at the time of the hijra",
+   "when he migrated to medina",
+   "when he migrated to madinah",
+   "old was the prophet at hijra"
   ],
   "a": [
    "53"
@@ -116,7 +120,10 @@
   "keys": [
    "grandfather died",
    "abdul muttalib died",
-   "abd al-muttalib died"
+   "abd al-muttalib died",
+   "his grandfather",
+   "grandfather abd al muttalib",
+   "grandfather abdul muttalib"
   ],
   "a": [
    "8"
@@ -455,7 +462,11 @@
   "keys": [
    "age when he received the first revelation",
    "age at first revelation",
-   "first revelation at the age"
+   "first revelation at the age",
+   "when he received the first revelation",
+   "when revelation began",
+   "when he became a prophet",
+   "when prophethood began"
   ],
   "a": [
    "40",
@@ -475,7 +486,10 @@
   "keys": [
    "age of the prophet when he died",
    "age at death",
-   "passed away at the age"
+   "passed away at the age",
+   "when he passed away",
+   "when he died",
+   "old was the prophet when he passed"
   ],
   "a": [
    "63",
@@ -942,6 +956,41 @@
   ],
   "a": [
    "Abu Bakr"
+  ]
+ },
+ {
+  "keys": [
+   "do at home",
+   "did at home",
+   "in his house",
+   "at home with his family"
+  ],
+  "a": [
+   "He was in the service of his family",
+   "service of his family"
+  ]
+ },
+ {
+  "keys": [
+   "his mother died",
+   "his mother aminah died",
+   "mother passed away",
+   "lost his mother"
+  ],
+  "a": [
+   "6",
+   "six"
+  ]
+ },
+ {
+  "keys": [
+   "his father died",
+   "father abdullah died",
+   "lost his father"
+  ],
+  "a": [
+   "Before he was born",
+   "before his birth"
   ]
  }
 ]
