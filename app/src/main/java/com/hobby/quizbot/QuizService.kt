@@ -47,6 +47,7 @@ class QuizService : AccessibilityService() {
     // Nusuk animates constantly, so a settle-based wait never fires.
     private val tick = object : Runnable {
         override fun run() {
+            lastTick = System.currentTimeMillis()
             try {
                 if (prefs.getBoolean(KEY_ENABLED, false) || prefs.getBoolean(KEY_DUMP, false)) scanScreen()
                 else { answeredThisRun = 0; lastSignature = null }
@@ -79,6 +80,7 @@ class QuizService : AccessibilityService() {
     }
 
     override fun onDestroy() {
+        lastTick = 0L
         handler.removeCallbacks(tick)
         super.onDestroy()
     }
@@ -311,6 +313,10 @@ class QuizService : AccessibilityService() {
         const val KEY_DUMP = "dump_next"
         const val KEY_MAX = "max_answers"
         private const val TICK_MS = 1200L
+
+        /** Heartbeat read by the main screen: proves the service is really running, not just ticked in Settings. */
+        @Volatile var lastTick = 0L
+        fun isAlive() = System.currentTimeMillis() - lastTick < 5_000
 
         private val IGNORED_PACKAGES = listOf(
             "com.android.systemui", "com.miui.home", "com.mi.android.globallauncher",

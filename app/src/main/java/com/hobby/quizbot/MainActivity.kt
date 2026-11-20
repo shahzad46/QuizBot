@@ -89,15 +89,31 @@ class MainActivity : Activity() {
             logView.text = AnswerBank(this).learnedJson()
         }
 
+        root.addView(TextView(this).apply {
+            textSize = 12f
+            text = "Xiaomi/Redmi: so the service isn't killed, set Settings > Apps > QuizBot > Autostart ON " +
+                "and Battery saver > No restrictions, and lock QuizBot in Recents (long-press its card > lock)."
+        })
         logView = TextView(this).apply { textSize = 12f; setTextIsSelectable(true) }
         root.addView(logView)
 
         setContentView(ScrollView(this).apply { addView(root, MATCH_PARENT, WRAP_CONTENT) })
     }
 
+    private val statusTicker = object : Runnable {
+        override fun run() { refresh(includeLog = false); status.postDelayed(this, 2000) }
+    }
+
     override fun onResume() {
         super.onResume()
         refresh()
+        status.removeCallbacks(statusTicker)
+        status.post(statusTicker)
+    }
+
+    override fun onPause() {
+        status.removeCallbacks(statusTicker)
+        super.onPause()
     }
 
     private fun serviceEnabled(): Boolean {
@@ -106,14 +122,18 @@ class MainActivity : Activity() {
         return enabled.split(':').any { it.equals(me, ignoreCase = true) }
     }
 
-    private fun refresh() {
+    private fun refresh(includeLog: Boolean = true) {
         val bank = AnswerBank(this)
         status.text = buildString {
-            append(if (serviceEnabled()) "✅ Accessibility service ON" else "❌ Accessibility service OFF - do step 1")
+            append(when {
+                serviceEnabled() && QuizService.isAlive() -> "✅ Service running"
+                serviceEnabled() -> "⚠️ ON in Settings but NOT running.\n   Fix: Accessibility > QuizBot auto-answer > OFF then ON.\n   Also allow Autostart for QuizBot (see below)."
+                else -> "❌ Accessibility service OFF - do step 1"
+            })
             append("\nBot: ").append(if (prefs.getBoolean(QuizService.KEY_ENABLED, false)) "RUNNING" else "stopped")
             append("\nAnswer bank: ${bank.size} entries (${bank.learnedCount} learned from you)")
         }
-        logView.text = BotLog.read(this)
+        if (includeLog) logView.text = BotLog.read(this)
         val running = prefs.getBoolean(QuizService.KEY_ENABLED, false)
         if (toggle.isChecked != running) toggle.isChecked = running   // bot may have stopped itself
     }
