@@ -25,11 +25,12 @@ import android.widget.Toast
  */
 class QuizService : AccessibilityService() {
 
-    private data class TextNode(val text: String, val norm: String, val rect: Rect, val node: AccessibilityNodeInfo)
+    data class TextNode(val text: String, val norm: String, val rect: Rect, val node: AccessibilityNodeInfo)
 
-    private val handler = Handler(Looper.getMainLooper())
+    val handler = Handler(Looper.getMainLooper())
     private lateinit var bank: AnswerBank
-    private val prefs by lazy { getSharedPreferences(PREFS, Context.MODE_PRIVATE) }
+    private val collector by lazy { KeyCollector(this) }
+    val prefs by lazy { getSharedPreferences(PREFS, Context.MODE_PRIVATE) }
 
     private var lastSignature: String? = null
     private var answeredThisRun = 0
@@ -49,8 +50,12 @@ class QuizService : AccessibilityService() {
         override fun run() {
             lastTick = System.currentTimeMillis()
             try {
-                if (prefs.getBoolean(KEY_ENABLED, false) || prefs.getBoolean(KEY_DUMP, false)) scanScreen()
-                else { answeredThisRun = 0; lastSignature = null }
+                if (prefs.getBoolean(KEY_COLLECT, false)) collector.tick()
+                else {
+                    collector.reset()
+                    if (prefs.getBoolean(KEY_ENABLED, false) || prefs.getBoolean(KEY_DUMP, false)) scanScreen()
+                    else { answeredThisRun = 0; lastSignature = null }
+                }
             } catch (e: Exception) {
                 log("Error: ${e.javaClass.simpleName}: ${e.message}")
             }
@@ -145,6 +150,14 @@ class QuizService : AccessibilityService() {
         // 4) "Choose a door"
         val header = nodes.firstOrNull { it.norm == "choose a door" }
         if (header != null) { handleDoors(nodes, header, keys); return }
+
+        // 5) "Your keys" page (e.g. after adding codes): go to the doors if there are keys
+        if (nodes.any { it.norm == "check the code" }) {
+            unknownSince = 0L
+            if (stopIfDone(keys)) return
+            nodes.lastOrNull { it.norm == "play" }?.let { tab -> act("play-tab") { click(tab) } }
+            return
+        }
 
         // Anything else: if it stays for ~10 s, log it once so it can be taught.
         if (unknownSince == 0L) unknownSince = System.currentTimeMillis()
@@ -266,14 +279,21 @@ class QuizService : AccessibilityService() {
     private fun keyCount(nodes: List<TextNode>): Int? =
         nodes.firstOrNull { it.rect.top < 200 && it.text.trim().matches(Regex("\\d{1,3}")) }?.text?.trim()?.toIntOrNull()
 
-    private fun dump(pkg: String, nodes: List<TextNode>) {
+    fun dump(pkg: String, nodes: List<TextNode>) {
         log("SCREEN DUMP ($pkg), ${nodes.size} text items:\n" +
             nodes.joinToString("\n") { "   • \"${it.text}\" ${it.rect.toShortString()}" })
     }
 
     // ---------------------------------------------------------------- helpers
 
-    private fun collect(root: AccessibilityNodeInfo): List<TextNode> {
+    /** Root nodes of all on-screen app windows (both apps in split screen), minus system UI and QuizBot. */
+    fun visibleRoots(): List<Pair<String, AccessibilityNodeInfo>> {
+        val roots = windows.mapNotNull { w -> w.root?.let { r -> (r.packageName?.toString() ?: "") to r } }
+            .ifEmpty { listOfNotNull(rootInActiveWindow?.let { (it.packageName?.toString() ?: "") to it }) }
+        return roots.filter { (pkg, _) -> pkg != packageName && IGNORED_PACKAGES.none { pkg.startsWith(it) } }
+    }
+
+    fun collect(root: AccessibilityNodeInfo): List<TextNode> {
         val out = mutableListOf<TextNode>()
         fun walk(n: AccessibilityNodeInfo?, depth: Int) {
             if (n == null || depth > 40) return
@@ -291,7 +311,7 @@ class QuizService : AccessibilityService() {
     }
 
     /** Click via the accessibility tree; fall back to a real tap gesture at the centre. */
-    private fun click(t: TextNode) {
+    fun click(t: TextNode) {
         var n: AccessibilityNodeInfo? = t.node
         while (n != null && !n.isClickable) n = n.parent
         if (n != null && n.performAction(AccessibilityNodeInfo.ACTION_CLICK)) return
@@ -304,14 +324,16 @@ class QuizService : AccessibilityService() {
         dispatchGesture(GestureDescription.Builder().addStroke(stroke).build(), null, null)
     }
 
-    private fun log(msg: String) = BotLog.add(this, msg)
-    private fun toast(msg: String) = Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
+    fun log(msg: String) = BotLog.add(this, msg)
+    fun toast(msg: String) = Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
 
     companion object {
         const val PREFS = "quizbot"
         const val KEY_ENABLED = "enabled"
         const val KEY_DUMP = "dump_next"
         const val KEY_MAX = "max_answers"
+        const val KEY_COLLECT = "collect_keys"
+        const val KEY_COLLECT_TARGET = "collect_target"
         private const val TICK_MS = 1200L
 
         /** Heartbeat read by the main screen: proves the service is really running, not just ticked in Settings. */

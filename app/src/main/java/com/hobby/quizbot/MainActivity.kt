@@ -24,6 +24,7 @@ class MainActivity : Activity() {
     private lateinit var status: TextView
     private lateinit var logView: TextView
     private lateinit var toggle: Switch
+    private lateinit var collectToggle: Switch
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -66,6 +67,40 @@ class MainActivity : Activity() {
         }
         maxRow.addView(maxEdit, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
         root.addView(maxRow)
+
+        // ---- Key collection from nusukkey.xyz
+        root.addView(TextView(this).apply {
+            text = "\nCollect keys (nusukkey.xyz codes)"
+            textSize = 16f
+        })
+        val targetRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        targetRow.addView(TextView(this).apply { text = "How many keys to add: " })
+        val targetEdit = EditText(this).apply {
+            inputType = InputType.TYPE_CLASS_NUMBER
+            setText(prefs.getInt(QuizService.KEY_COLLECT_TARGET, 5).toString())
+            setOnFocusChangeListener { _, has ->
+                if (!has) text.toString().toIntOrNull()?.let { prefs.edit().putInt(QuizService.KEY_COLLECT_TARGET, it).apply() }
+            }
+        }
+        targetRow.addView(targetEdit, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
+        root.addView(targetRow)
+        collectToggle = Switch(this).apply {
+            text = "Collect keys now"
+            textSize = 16f
+            isChecked = prefs.getBoolean(QuizService.KEY_COLLECT, false)
+            setOnCheckedChangeListener { _, on ->
+                targetEdit.text.toString().toIntOrNull()?.let { prefs.edit().putInt(QuizService.KEY_COLLECT_TARGET, it).apply() }
+                prefs.edit().putBoolean(QuizService.KEY_COLLECT, on).apply()
+                BotLog.add(this@MainActivity, if (on) "Key collection ON (target ${prefs.getInt(QuizService.KEY_COLLECT_TARGET, 5)})" else "Key collection OFF")
+            }
+        }
+        root.addView(collectToggle)
+        root.addView(TextView(this).apply {
+            textSize = 12f
+            text = "Best: put your browser (nusukkey.xyz) and Nusuk side by side in split screen, Nusuk on 'Your keys'. " +
+                "Otherwise QuizBot switches between them (Xiaomi: allow QuizBot 'Display pop-up windows while running in the background'). " +
+                "If 'Bot running' is also on, it plays the quiz with the new keys afterwards.\n"
+        })
 
         button("Dump the next screen to the log (diagnostics)") {
             prefs.edit().putBoolean(QuizService.KEY_DUMP, true).apply()
@@ -136,5 +171,7 @@ class MainActivity : Activity() {
         if (includeLog) logView.text = BotLog.read(this)
         val running = prefs.getBoolean(QuizService.KEY_ENABLED, false)
         if (toggle.isChecked != running) toggle.isChecked = running   // bot may have stopped itself
+        val collecting = prefs.getBoolean(QuizService.KEY_COLLECT, false)
+        if (collectToggle.isChecked != collecting) collectToggle.isChecked = collecting
     }
 }
