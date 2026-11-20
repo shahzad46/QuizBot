@@ -3,6 +3,8 @@ name: Build APK
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - "app/src/main/assets/answers.json"   # answer-only changes are downloaded by the app, no new APK needed
   workflow_dispatch:
 
 permissions:
