@@ -293,15 +293,15 @@ class QuizService : AccessibilityService() {
         return roots.filter { (pkg, _) -> pkg != packageName && IGNORED_PACKAGES.none { pkg.startsWith(it) } }
     }
 
-    fun collect(root: AccessibilityNodeInfo): List<TextNode> {
+    fun collect(root: AccessibilityNodeInfo, includeHidden: Boolean = false): List<TextNode> {
         val out = mutableListOf<TextNode>()
         fun walk(n: AccessibilityNodeInfo?, depth: Int) {
-            if (n == null || depth > 40) return
-            if (n.isVisibleToUser) {
+            if (n == null || depth > 60) return
+            if (includeHidden || n.isVisibleToUser) {
                 val t = (n.text ?: n.contentDescription)?.toString()?.trim().orEmpty()
                 if (t.isNotEmpty() && t != "Close sheet") {
                     val r = Rect().also { n.getBoundsInScreen(it) }
-                    if (r.width() > 0 && r.height() > 0) out.add(TextNode(t, AnswerBank.norm(t), r, n))
+                    if (includeHidden || (r.width() > 0 && r.height() > 0)) out.add(TextNode(t, AnswerBank.norm(t), r, n))
                 }
             }
             for (i in 0 until n.childCount) walk(n.getChild(i), depth + 1)

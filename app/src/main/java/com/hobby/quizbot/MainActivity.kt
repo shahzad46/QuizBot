@@ -70,14 +70,14 @@ class MainActivity : Activity() {
 
         // ---- Key collection from nusukkey.xyz
         root.addView(TextView(this).apply {
-            text = "\nCollect keys (nusukkey.xyz codes)"
+            text = "\nGet new keys (codes from nusukkey.xyz)"
             textSize = 16f
         })
         val targetRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        targetRow.addView(TextView(this).apply { text = "How many keys to add: " })
+        targetRow.addView(TextView(this).apply { text = "Codes to gather: " })
         val targetEdit = EditText(this).apply {
             inputType = InputType.TYPE_CLASS_NUMBER
-            setText(prefs.getInt(QuizService.KEY_COLLECT_TARGET, 5).toString())
+            setText(prefs.getInt(QuizService.KEY_COLLECT_TARGET, 50).toString())
             setOnFocusChangeListener { _, has ->
                 if (!has) text.toString().toIntOrNull()?.let { prefs.edit().putInt(QuizService.KEY_COLLECT_TARGET, it).apply() }
             }
@@ -85,20 +85,20 @@ class MainActivity : Activity() {
         targetRow.addView(targetEdit, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
         root.addView(targetRow)
         collectToggle = Switch(this).apply {
-            text = "Collect keys now"
+            text = "Get new keys"
             textSize = 16f
             isChecked = prefs.getBoolean(QuizService.KEY_COLLECT, false)
             setOnCheckedChangeListener { _, on ->
                 targetEdit.text.toString().toIntOrNull()?.let { prefs.edit().putInt(QuizService.KEY_COLLECT_TARGET, it).apply() }
                 prefs.edit().putBoolean(QuizService.KEY_COLLECT, on).apply()
-                BotLog.add(this@MainActivity, if (on) "Key collection ON (target ${prefs.getInt(QuizService.KEY_COLLECT_TARGET, 5)})" else "Key collection OFF")
+                BotLog.add(this@MainActivity, if (on) "Get new keys ON (gather ${prefs.getInt(QuizService.KEY_COLLECT_TARGET, 50)} codes)" else "Get new keys OFF")
             }
         }
         root.addView(collectToggle)
         root.addView(TextView(this).apply {
             textSize = 12f
-            text = "Best: put your browser (nusukkey.xyz) and Nusuk side by side in split screen, Nusuk on 'Your keys'. " +
-                "Otherwise QuizBot switches between them (Xiaomi: allow QuizBot 'Display pop-up windows while running in the background'). " +
+            text = "QuizBot opens nusukkey.xyz, gathers the codes, then switches to Nusuk and tries them one by one " +
+                "(stops after 10 failures in a row). Xiaomi: allow QuizBot 'Display pop-up windows while running in the background'. " +
                 "If 'Bot running' is also on, it plays the quiz with the new keys afterwards.\n"
         })
 
