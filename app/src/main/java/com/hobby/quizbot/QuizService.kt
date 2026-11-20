@@ -69,6 +69,10 @@ class QuizService : AccessibilityService() {
 
     private fun scanScreen() {
         val root = rootInActiveWindow ?: return
+        // Ignore our own screen, the launcher, notification shade and keyboard:
+        // keep waiting (and keep the dump request pending) until another app is in front.
+        val pkg = root.packageName?.toString().orEmpty()
+        if (pkg == packageName || IGNORED_PACKAGES.any { pkg.startsWith(it) }) return
         val nodes = collect(root)
 
         if (prefs.getBoolean(KEY_DUMP, false)) {
@@ -181,6 +185,12 @@ class QuizService : AccessibilityService() {
         const val KEY_DUMP = "dump_next"
         const val KEY_MAX = "max_answers"
 
+        private val IGNORED_PACKAGES = listOf(
+            "com.android.systemui", "com.miui.home", "com.mi.android.globallauncher",
+            "com.android.launcher", "com.google.android.apps.nexuslauncher",
+            "com.google.android.inputmethod", "com.android.inputmethod", "com.miui.securitycenter",
+            "com.android.settings", "com.android.permissioncontroller"
+        )
         private val CHECK_WORDS = setOf("check your answer", "check answer", "submit", "submit answer")
         private val NEXT_WORDS = setOf("next", "next question", "continue", "ok", "got it", "done")
     }
