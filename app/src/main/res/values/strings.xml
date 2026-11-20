@@ -1,0 +1,5 @@
+<resources>
+    <string name="app_name">QuizBot</string>
+    <string name="service_name">QuizBot auto-answer</string>
+    <string name="service_desc">Reads quiz questions on screen, looks up the answer in an offline answer bank and taps it.</string>
+</resources>
