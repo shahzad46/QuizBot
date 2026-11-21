@@ -281,16 +281,8 @@ class QuizService : AccessibilityService() {
             tapFrozen = false
             lastEventIdx = -1
             pendingSince = System.currentTimeMillis()
-            val key = prefs.getString(KEY_GEMINI_KEY, "").orEmpty().trim()
-            val useGemini = prefs.getBoolean(KEY_GEMINI_ON, false) && key.isNotEmpty()
-            val useWeb = prefs.getBoolean(KEY_WEB_ON, true)
-            if (useGemini || useWeb) {
-                log("UNKNOWN: \"${question.text}\"\n   options: ${optTexts.joinToString(" | ")}\n   -> looking it up online...")
-                askOnline(key, useGemini, useWeb, question.text, optTexts, signature)
-            } else {
-                log("UNKNOWN: \"${question.text}\"\n   options: ${optTexts.joinToString(" | ")}\n   -> tap the answer and Check yourself; it's saved if Correct.")
-                toast("QuizBot: new question - answer it yourself")
-            }
+            log("UNKNOWN: \"${question.text}\"\n   options: ${optTexts.joinToString(" | ")}\n   -> tap the answer and Check yourself; it's saved if Correct.")
+            toast("QuizBot: new question - answer it yourself")
             return
         }
 
@@ -303,53 +295,6 @@ class QuizService : AccessibilityService() {
             val btn = rootInActiveWindow?.let { r -> collect(r).firstOrNull { it.norm in CHECK_WORDS } }
             if (btn != null) click(btn) else log("Couldn't find 'Check your answer' after selecting.")
         }, 1000)
-    }
-
-    /** Ask Gemini (with Google Search) in the background, then tap its answer if the question is still on screen. */
-    private fun askOnline(key: String, useGemini: Boolean, useWeb: Boolean, q: String, opts: List<String>, signature: String) {
-        Thread {
-            var idx: Int? = null
-            var how = ""
-            val problems = mutableListOf<String>()
-            // 1) Free Quran-verse search (no key) for "which surah has the verse ..." questions.
-            if (useWeb) try { WebLookup.answer(q, opts)?.let { idx = it.index; how = it.how } }
-                        catch (e: Exception) { problems += "Quran search: ${e.message}" }
-            // 2) Gemini, if a working key is set up.
-            val cooling = System.currentTimeMillis() < prefs.getLong(KEY_GEMINI_COOLDOWN, 0L)
-            if (idx == null && useGemini && !cooling) try {
-                val r = GeminiHelper.ask(key, q, opts, prefs.getString(KEY_GEMINI_MODEL, null))
-                prefs.edit().putString(KEY_GEMINI_MODEL, r.model).apply()
-                idx = r.index; how = r.model
-            } catch (e: Exception) {
-                val m = e.message.orEmpty()
-                if (m.contains("429") || m.contains("404")) {
-                    prefs.edit().putLong(KEY_GEMINI_COOLDOWN, System.currentTimeMillis() + 6 * 3600_000L).apply()
-                    problems += "Gemini: this key has no free quota right now; not trying again for 6 hours"
-                } else problems += "Gemini: ${m.take(150)}"
-            }
-            val found = idx
-            if (found == null) handler.post {
-                log("Not found online${if (problems.isEmpty()) "" else " (" + problems.joinToString("; ") + ")"} - answer it yourself; it's saved if Correct.")
-                toast("QuizBot: new question - answer it yourself")
-            }
-            else handler.post {
-                val res = object { val index: Int = found!!; val model = how }
-                if (lastSignature != signature) { log("Online answer arrived too late (question changed)."); return@post }
-                val answer = opts[res.index]
-                val root = rootInActiveWindow ?: return@post
-                val target = collect(root).firstOrNull { it.norm == AnswerBank.norm(answer) }
-                    ?: run { log("Couldn't find option \"$answer\" on screen."); return@post }
-                log("   -> $answer  (online, ${res.model})")
-                lastBotQuestion = q
-                pendingLearn = q to answer          // saved to the answer bank if Nusuk says Correct
-                click(target)
-                answeredThisRun++
-                handler.postDelayed({
-                    val btn = rootInActiveWindow?.let { r -> collect(r).firstOrNull { it.norm in CHECK_WORDS } }
-                    if (btn != null) click(btn) else log("Couldn't find 'Check your answer' after selecting.")
-                }, 1000)
-            }
-        }.start()
     }
 
     private fun handleResult(nodes: List<TextNode>, playAgain: TextNode, keys: Int?) {
@@ -491,11 +436,6 @@ class QuizService : AccessibilityService() {
         const val KEY_DUMP = "dump_next"
         const val KEY_MAX = "max_answers"
         const val KEY_COLLECT = "collect_keys"
-        const val KEY_GEMINI_KEY = "gemini_key"
-        const val KEY_GEMINI_ON = "gemini_on"
-        const val KEY_GEMINI_MODEL = "gemini_model"
-        const val KEY_WEB_ON = "web_lookup_on"
-        const val KEY_GEMINI_COOLDOWN = "gemini_cooldown_until"
         const val KEY_COLLECT_TARGET = "collect_target"
         private const val TICK_MS = 1200L
 

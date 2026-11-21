@@ -68,55 +68,6 @@ class MainActivity : Activity() {
         maxRow.addView(maxEdit, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
         root.addView(maxRow)
 
-        // ---- Online lookup for unknown questions
-        root.addView(TextView(this).apply {
-            text = "\nUnknown questions: look them up online"
-            textSize = 16f
-        })
-        root.addView(Switch(this).apply {
-            text = "Look up Quran-verse questions online (free, no key)"
-            textSize = 16f
-            isChecked = prefs.getBoolean(QuizService.KEY_WEB_ON, true)
-            setOnCheckedChangeListener { _, on ->
-                prefs.edit().putBoolean(QuizService.KEY_WEB_ON, on).apply()
-                BotLog.add(this@MainActivity, if (on) "Quran-verse lookup ON" else "Quran-verse lookup OFF")
-            }
-        })
-        val keyEdit = EditText(this).apply {
-            hint = "Optional: Gemini API key (aistudio.google.com) for all other questions"
-            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD
-            setText(prefs.getString(QuizService.KEY_GEMINI_KEY, ""))
-            setOnFocusChangeListener { _, has ->
-                if (!has) prefs.edit().putString(QuizService.KEY_GEMINI_KEY, text.toString().trim()).apply()
-            }
-        }
-        root.addView(keyEdit)
-        root.addView(Switch(this).apply {
-            text = "Look up unknown questions online (Gemini + Google Search)"
-            textSize = 16f
-            isChecked = prefs.getBoolean(QuizService.KEY_GEMINI_ON, false)
-            setOnCheckedChangeListener { _, on ->
-                prefs.edit().putString(QuizService.KEY_GEMINI_KEY, keyEdit.text.toString().trim())
-                    .putBoolean(QuizService.KEY_GEMINI_ON, on).apply()
-                BotLog.add(this@MainActivity, if (on) "Online lookup ON" else "Online lookup OFF")
-            }
-        })
-        button("Test the Gemini key") {
-            val key = keyEdit.text.toString().trim()
-            prefs.edit().putString(QuizService.KEY_GEMINI_KEY, key).apply()
-            if (key.isEmpty()) { Toast.makeText(this, "Paste the key first", Toast.LENGTH_SHORT).show(); return@button }
-            Toast.makeText(this, "Asking Gemini...", Toast.LENGTH_SHORT).show()
-            Thread {
-                val msg = try {
-                    val r = GeminiHelper.ask(key, "How many verses are in Surat al-Fatiha?",
-                        listOf("6 verses", "8 verses", "5 verses", "7 verses"), prefs.getString(QuizService.KEY_GEMINI_MODEL, null))
-                    prefs.edit().putString(QuizService.KEY_GEMINI_MODEL, r.model).apply()
-                    if (r.index == 3) "Gemini key works (${r.model}): answered 7 verses correctly." else "Gemini replied but chose option ${r.index + 1} (expected 4)."
-                } catch (e: Exception) { "Gemini test failed: ${e.message}" }
-                runOnUiThread { BotLog.add(this, msg); Toast.makeText(this, msg, Toast.LENGTH_LONG).show(); refresh() }
-            }.start()
-        }
-
         // ---- Key collection from nusukkey.xyz
         root.addView(TextView(this).apply {
             text = "\nGet new keys (codes from nusukkey.xyz)"
