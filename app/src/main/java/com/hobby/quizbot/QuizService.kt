@@ -56,6 +56,24 @@ class QuizService : AccessibilityService() {
     private var lastShotAt = 0L
     private var shotFailLogged = false
     private var lastBotQuestion: String? = null
+    private var prevShot: List<IntArray>? = null                     // previous screenshot's option pixels
+    private var lastClearShot: List<IntArray>? = null                // newest screenshot with the options uncovered
+    private val stepFrames = ArrayList<Pair<Int, List<IntArray>>>()  // (option that suddenly changed, frame before it)
+    private var learnHow = ""                                        // how pendingLearn was found
+    private var shotCount = 0
+    private var biggestStep = 0.0
+    private var lastKeys: Int? = null                                // last key count seen anywhere (for the log)
+    private var questionStuckSince = 0L
+    private var questionStuckLogged = false
+    // While an unknown question waits for your tap, take screenshots often so the short moment between
+    // your tap and "Check your answer" is caught.
+    private val shotLoop = object : Runnable {
+        override fun run() {
+            if (pendingUnknown == null || tapFrozen) return
+            requestShot()
+            handler.postDelayed(this, SHOT_MS)
+        }
+    }
 
     // Poll the screen regularly instead of waiting for it to "settle":
     // Nusuk animates constantly, so a settle-based wait never fires.
@@ -169,6 +187,7 @@ class QuizService : AccessibilityService() {
     private fun choose(q: String, option: String, how: String) {
         if (pendingLearn?.second == option) return
         pendingLearn = q to option
+        learnHow = how
         log("You chose: $option ($how; saved if the result is Correct)")
     }
 
@@ -185,7 +204,7 @@ class QuizService : AccessibilityService() {
         if (android.os.Build.VERSION.SDK_INT < 30) return
         if (shotPending || pendingUnknown == null || tapFrozen || optionBoxes.isEmpty()) return
         val now = System.currentTimeMillis()
-        if (now - lastShotAt < 400) return
+        if (now - lastShotAt < 380) return
         shotPending = true
         lastShotAt = now
         takeScreenshot(android.view.Display.DEFAULT_DISPLAY, mainExecutor, object : TakeScreenshotCallback {
@@ -229,18 +248,65 @@ class QuizService : AccessibilityService() {
         return n.toDouble() / a.size
     }
 
+    /**
+     * Your tap shows up as ONE option changing colour suddenly and staying changed, while the others don't.
+     * Earlier versions compared every screenshot with one taken when the question appeared; Nusuk's moving
+     * background slowly changes all options, so after ~20-30 s every option looked "changed" and the tap
+     * was never recognised. Now each screenshot is compared with the previous one (a sudden change), and the
+     * change must still be there in the last screenshot before the result sheet covers the options.
+     */
     private fun analyseShot(bmp: android.graphics.Bitmap) {
         val (q, opts) = pendingUnknown ?: return
         if (tapFrozen || optionBoxes.size != opts.size) return
         val cur = optionBoxes.map { sample(bmp, it) }
         val base = baseShots
-        if (base == null || System.currentTimeMillis() - pendingSince < 1500) { baseShots = cur; return }
-        val frac = cur.indices.map { changedFraction(base[it], cur[it]) }
-        val order = frac.indices.sortedByDescending { frac[it] }
-        val best = order[0]; val second = order[1]
-        // Several options changed at once = the result sheet is covering them: keep the choice made before.
-        if (frac.count { it > 0.15 } >= 2) { if (pendingLearn != null) tapFrozen = true; return }
-        if (frac[best] > 0.02 && frac[best] > 2.5 * frac[second]) choose(q, opts[best], "screen colours")
+        if (base == null || System.currentTimeMillis() - pendingSince < 1500) {
+            baseShots = cur; prevShot = cur; lastClearShot = cur; return
+        }
+        val prev = prevShot ?: cur
+        prevShot = cur
+        val vsPrev = cur.indices.map { changedFraction(prev[it], cur[it]) }
+        val vsBase = cur.indices.map { changedFraction(base[it], cur[it]) }
+        val need = minOf(3, opts.size)
+        // Most options changed a lot at once = the result sheet is sliding over them: decide now.
+        if (vsPrev.count { it > 0.3 } >= need || vsBase.count { it > 0.5 } >= need) {
+            finalizeTap()
+            tapFrozen = true
+            return
+        }
+        shotCount++
+        lastClearShot = cur
+        val order = vsPrev.indices.sortedByDescending { vsPrev[it] }
+        val best = order[0]
+        val second = vsPrev[order[1]]
+        biggestStep = maxOf(biggestStep, vsPrev[best])
+        if (vsPrev[best] > 0.03 && vsPrev[best] > 3 * maxOf(second, 0.005)) {
+            stepFrames.add(best to prev)
+            if (stepFrames.size > 6) stepFrames.removeAt(0)
+        }
+        pickTap(cur)?.let { choose(q, opts[it], "screen colours") }
+    }
+
+    /** Newest sudden single-option change that is still visible in [now]; else a plain change since the start. */
+    private fun pickTap(now: List<IntArray>): Int? {
+        for ((idx, before) in stepFrames.asReversed()) {
+            val f = now.indices.map { changedFraction(before[it], now[it]) }
+            val second = f.indices.filter { it != idx }.maxOfOrNull { f[it] } ?: 0.0
+            if (f[idx] > 0.02 && f[idx] > 2 * maxOf(second, 0.005)) return idx
+        }
+        val base = baseShots ?: return null
+        val f = now.indices.map { changedFraction(base[it], now[it]) }
+        val order = f.indices.sortedByDescending { f[it] }
+        return order[0].takeIf { f[it] > 0.02 && f[it] > 2.5 * maxOf(f[order[1]], 0.005) && f.count { x -> x > 0.15 } < 2 }
+    }
+
+    /** Last look at the options before the result covers them: keep only a choice that is still visible. */
+    private fun finalizeTap() {
+        val (q, opts) = pendingUnknown ?: return
+        val last = lastClearShot ?: return
+        val idx = pickTap(last)
+        if (idx != null) choose(q, opts[idx], "screen colours")
+        else if (learnHow == "screen colours") { pendingLearn = null; learnHow = "" }   // it was only a passing flicker
     }
 
     /** What an option looks like to accessibility: state flags, size and children of its button. */
@@ -303,11 +369,12 @@ class QuizService : AccessibilityService() {
         if (!prefs.getBoolean(KEY_ENABLED, false)) return
 
         val keys = keyCount(nodes)
+        if (keys != null) lastKeys = keys
 
         // 1) "Do you want to use your key?" sheet
         nodes.firstOrNull { it.norm == "open the door" }?.let { btn ->
             if (stopIfDone(keys)) return
-            act("open-door") { log("Opening the door (keys left: ${keys ?: "?"})"); click(btn) }
+            act("open-door") { log("Opening the door (keys left: ${keys ?: lastKeys ?: "?"})"); click(btn) }
             return
         }
 
@@ -347,12 +414,23 @@ class QuizService : AccessibilityService() {
         val above = nodes.filter { it.rect.bottom <= check.rect.top + 5 }
         val question = above.filter { it.text.contains("?") }.maxByOrNull { it.text.length }
             ?: above.filter { it.text.length > 20 }.maxByOrNull { it.text.length }
-            ?: return
-        val options = above
+        val options = if (question == null) emptyList<TextNode>() else above
             .filter { it.rect.top >= question.rect.bottom - 5 && it !== question }
-            .filter { it.text.length <= 90 && NOT_OPTIONS.none { p -> it.norm.startsWith(p) } }
+            .filter { it.text.length <= 150 && NOT_OPTIONS.none { p -> it.norm.startsWith(p) } }
             .distinctBy { it.norm }
-        if (options.size < 2) return
+        if (question == null || options.size < 2) {
+            // A question screen the bot can't read: log it once so it can be fixed.
+            val now = System.currentTimeMillis()
+            if (questionStuckSince == 0L) questionStuckSince = now
+            else if (now - questionStuckSince > 4000 && !questionStuckLogged) {
+                questionStuckLogged = true
+                log("Question screen I can't read (${if (question == null) "no question text" else "${options.size} option(s)"}):")
+                dump(rootInActiveWindow?.packageName?.toString() ?: "", nodes)
+            }
+            return
+        }
+        questionStuckSince = 0L
+        questionStuckLogged = false
 
         val signature = question.norm + "|" + options.joinToString("|") { it.norm }
         if (signature == lastSignature) {               // already handled this question
@@ -380,7 +458,10 @@ class QuizService : AccessibilityService() {
             pendingSince = System.currentTimeMillis()
             optionBoxes = options.map { boxOf(it.node) }
             baseShots = null
-            handler.postDelayed({ requestShot() }, 1600)
+            prevShot = null; lastClearShot = null; stepFrames.clear()
+            learnHow = ""; shotCount = 0; biggestStep = 0.0; shotFailLogged = false
+            handler.removeCallbacks(shotLoop)
+            handler.postDelayed(shotLoop, 1600)
             log("UNKNOWN: \"${question.text}\"\n   options: ${optTexts.joinToString(" | ")}\n   -> tap the answer and Check yourself; it's saved if Correct.")
             toast("QuizBot: new question - answer it yourself")
             return
@@ -417,10 +498,18 @@ class QuizService : AccessibilityService() {
                 headline != null -> "Result: \"${headline.text}\""
                 else -> "Result screen (no headline found)"
             })
-            if (pendingLearn == null && pendingUnknown != null)
-                log("Couldn't tell which option you tapped, so this answer wasn't saved.")
+            if (pendingUnknown != null) { finalizeTap(); tapFrozen = true }
+            if (pendingLearn == null && pendingUnknown != null) {
+                answerFromResultText(nodes, headline, correct)?.let { choose(it.first, it.second, "result text") }
+            }
+            if (pendingLearn == null && pendingUnknown != null) {
+                log("Couldn't tell which option you tapped, so this answer wasn't saved. " +
+                    "(screenshots: $shotCount, sudden changes: ${stepFrames.size}, biggest: ${"%.2f".format(biggestStep)})")
+                log("Result screen, to see if it names the answer:")
+                dump(rootInActiveWindow?.packageName?.toString() ?: "", nodes.filter { headline == null || it.rect.bottom >= headline.rect.top })
+            }
             pendingLearn?.let { (q, a) ->
-                if (correct) { bank.learn(q, a); log("LEARNED: \"$q\" -> $a"); shareLearned() }
+                if (correct || learnHow == "result text") { bank.learn(q, a); log("LEARNED: \"$q\" -> $a"); shareLearned() }
                 else log("Not saved (answer wasn't confirmed correct): $a")
             }
             if (!correct && lastBotQuestion != null) {
@@ -433,9 +522,29 @@ class QuizService : AccessibilityService() {
             baseFingerprints = emptyList()
             optionBoxes = emptyList()
             baseShots = null
+            prevShot = null; lastClearShot = null; stepFrames.clear(); learnHow = ""
+            handler.removeCallbacks(shotLoop)
         }
         if (stopIfDone(keys)) return
-        act("play-again") { log("Play again"); lastSignature = null; click(playAgain) }
+        act("play-again") { log("Play again"); lastSignature = null; questionStuckSince = 0L; questionStuckLogged = false; click(playAgain) }
+    }
+
+    /**
+     * If the result sheet spells out the answer (e.g. "Correct! Mus'ab ibn Umayr was ..." or
+     * "The correct answer is ..."), take it from there. Only text on the sheet counts, and exactly one
+     * option must appear in it.
+     */
+    private fun answerFromResultText(nodes: List<TextNode>, headline: TextNode?, correct: Boolean): Pair<String, String>? {
+        val (q, opts) = pendingUnknown ?: return null
+        headline ?: return null
+        val optNorms = opts.map { AnswerBank.norm(it) }
+        val sheet = nodes.filter { it.rect.bottom > headline.rect.top && it.norm !in optNorms && it.norm != AnswerBank.norm(q) }
+        val found = opts.indices.filter { i ->
+            optNorms[i].length >= 4 && sheet.any { n ->
+                n.norm.contains(optNorms[i]) && (correct || n.norm.contains("correct answer") || n.norm.contains("right answer"))
+            }
+        }
+        return if (found.size == 1) q to opts[found[0]] else null
     }
 
     private fun handleDoors(nodes: List<TextNode>, header: TextNode, keys: Int?) {
@@ -548,6 +657,7 @@ class QuizService : AccessibilityService() {
         const val KEY_GH_TOKEN = "github_token"
         const val KEY_COLLECT_TARGET = "collect_target"
         private const val TICK_MS = 1200L
+        private const val SHOT_MS = 450L
 
         /** Heartbeat read by the main screen: proves the service is really running, not just ticked in Settings. */
         @Volatile var lastTick = 0L
