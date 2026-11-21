@@ -47,8 +47,13 @@ class QuizService : AccessibilityService() {
     private var baseFingerprints: List<String> = emptyList()         // how each option looked before your tap
     private var tapFrozen = false                                    // you pressed Check: stop updating
     private var lastEventIdx = -1                                    // option the latest screen change was in
-    private val fingerprintCheck = Runnable { checkFingerprints() }
+    private val fingerprintCheck = Runnable { checkFingerprints(); requestShot() }
     private var pendingSince = 0L                                    // when the unknown question appeared
+    private var optionBoxes: List<Rect> = emptyList()                // each option's button on screen
+    private var baseShots: List<IntArray>? = null                    // option pixels before your tap
+    private var shotPending = false
+    private var lastShotAt = 0L
+    private var shotFailLogged = false
     private var lastBotQuestion: String? = null
 
     // Poll the screen regularly instead of waiting for it to "settle":
@@ -145,6 +150,77 @@ class QuizService : AccessibilityService() {
         if (pendingLearn?.second == option) return
         pendingLearn = q to option
         log("You chose: $option ($how; saved if the result is Correct)")
+    }
+
+    // ---- Screenshot-based detection: the option you tap is drawn in a different colour.
+
+    private fun boxOf(n: AccessibilityNodeInfo): Rect {
+        var b: AccessibilityNodeInfo? = n
+        var up = 0
+        while (b != null && !b.isClickable && up < 4) { b = b.parent; up++ }
+        return Rect().also { (if (b != null && b.isClickable) b else n).getBoundsInScreen(it) }
+    }
+
+    private fun requestShot() {
+        if (android.os.Build.VERSION.SDK_INT < 30) return
+        if (shotPending || pendingUnknown == null || tapFrozen || optionBoxes.isEmpty()) return
+        val now = System.currentTimeMillis()
+        if (now - lastShotAt < 400) return
+        shotPending = true
+        lastShotAt = now
+        takeScreenshot(android.view.Display.DEFAULT_DISPLAY, mainExecutor, object : TakeScreenshotCallback {
+            override fun onSuccess(result: ScreenshotResult) {
+                shotPending = false
+                try {
+                    val hw = android.graphics.Bitmap.wrapHardwareBuffer(result.hardwareBuffer, result.colorSpace)
+                    val bmp = hw?.copy(android.graphics.Bitmap.Config.ARGB_8888, false)
+                    result.hardwareBuffer.close()
+                    hw?.recycle()
+                    if (bmp != null) { analyseShot(bmp); bmp.recycle() }
+                } catch (e: Exception) {
+                    if (!shotFailLogged) { shotFailLogged = true; log("Screenshot read failed: ${e.message}") }
+                }
+            }
+            override fun onFailure(errorCode: Int) {
+                shotPending = false
+                if (!shotFailLogged) { shotFailLogged = true; log("Screenshot not allowed (error $errorCode) - can't see which option you tap.") }
+            }
+        })
+    }
+
+    private fun sample(bmp: android.graphics.Bitmap, r: Rect): IntArray {
+        val left = r.left.coerceIn(0, bmp.width - 1); val right = r.right.coerceIn(left + 1, bmp.width)
+        val top = r.top.coerceIn(0, bmp.height - 1); val bottom = r.bottom.coerceIn(top + 1, bmp.height)
+        val out = ArrayList<Int>()
+        var y = top
+        while (y < bottom) { var x = left; while (x < right) { out.add(bmp.getPixel(x, y)); x += 3 }; y += 3 }
+        return out.toIntArray()
+    }
+
+    private fun changedFraction(a: IntArray, b: IntArray): Double {
+        if (a.isEmpty() || a.size != b.size) return 0.0
+        var n = 0
+        for (i in a.indices) {
+            val p = a[i]; val q = b[i]
+            val d = Math.abs(((p shr 16) and 255) - ((q shr 16) and 255)) +
+                    Math.abs(((p shr 8) and 255) - ((q shr 8) and 255)) + Math.abs((p and 255) - (q and 255))
+            if (d > 60) n++
+        }
+        return n.toDouble() / a.size
+    }
+
+    private fun analyseShot(bmp: android.graphics.Bitmap) {
+        val (q, opts) = pendingUnknown ?: return
+        if (tapFrozen || optionBoxes.size != opts.size) return
+        val cur = optionBoxes.map { sample(bmp, it) }
+        val base = baseShots
+        if (base == null || System.currentTimeMillis() - pendingSince < 1500) { baseShots = cur; return }
+        val frac = cur.indices.map { changedFraction(base[it], cur[it]) }
+        val order = frac.indices.sortedByDescending { frac[it] }
+        val best = order[0]; val second = order[1]
+        // Several options changed at once = the result sheet is covering them: keep the choice made before.
+        if (frac.count { it > 0.15 } >= 2) { if (pendingLearn != null) tapFrozen = true; return }
+        if (frac[best] > 0.02 && frac[best] > 2.5 * frac[second]) choose(q, opts[best], "screen colours")
     }
 
     /** What an option looks like to accessibility: state flags, size and children of its button. */
@@ -263,6 +339,7 @@ class QuizService : AccessibilityService() {
             pendingUnknown?.let { (q, _) ->
                 options.firstOrNull { isSelected(it.node) }?.let { sel -> choose(q, sel.text, "selected") }
                     ?: checkFingerprints()
+                requestShot()
             }
             return
         }
@@ -281,6 +358,9 @@ class QuizService : AccessibilityService() {
             tapFrozen = false
             lastEventIdx = -1
             pendingSince = System.currentTimeMillis()
+            optionBoxes = options.map { boxOf(it.node) }
+            baseShots = null
+            handler.postDelayed({ requestShot() }, 1600)
             log("UNKNOWN: \"${question.text}\"\n   options: ${optTexts.joinToString(" | ")}\n   -> tap the answer and Check yourself; it's saved if Correct.")
             toast("QuizBot: new question - answer it yourself")
             return
@@ -324,6 +404,8 @@ class QuizService : AccessibilityService() {
             pendingUnknown = null
             tapFrozen = false
             baseFingerprints = emptyList()
+            optionBoxes = emptyList()
+            baseShots = null
         }
         if (stopIfDone(keys)) return
         act("play-again") { log("Play again"); lastSignature = null; click(playAgain) }
