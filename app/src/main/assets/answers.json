@@ -207,11 +207,21 @@
    "does not begin with bismillah",
    "without bismillah",
    "without basmala",
-   "does not start with bismillah"
+   "does not start with bismillah",
+   "does not begin with bismala",
+   "does not begin with basmala",
+   "does not begin with basmalah",
+   "does not begin with the basmala",
+   "does not start with bismala",
+   "does not start with the basmala",
+   "without the basmala",
+   "without bismala"
   ],
   "a": [
    "At-Tawbah",
    "Al-Tawbah",
+   "At-Tawba",
+   "Al-Tawba",
    "Bara'ah"
   ]
  },
