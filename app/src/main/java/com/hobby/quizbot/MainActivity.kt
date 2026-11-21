@@ -73,8 +73,17 @@ class MainActivity : Activity() {
             text = "\nUnknown questions: look them up online"
             textSize = 16f
         })
+        root.addView(Switch(this).apply {
+            text = "Look up Quran-verse questions online (free, no key)"
+            textSize = 16f
+            isChecked = prefs.getBoolean(QuizService.KEY_WEB_ON, true)
+            setOnCheckedChangeListener { _, on ->
+                prefs.edit().putBoolean(QuizService.KEY_WEB_ON, on).apply()
+                BotLog.add(this@MainActivity, if (on) "Quran-verse lookup ON" else "Quran-verse lookup OFF")
+            }
+        })
         val keyEdit = EditText(this).apply {
-            hint = "Paste your free Gemini API key (aistudio.google.com)"
+            hint = "Optional: Gemini API key (aistudio.google.com) for all other questions"
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD
             setText(prefs.getString(QuizService.KEY_GEMINI_KEY, ""))
             setOnFocusChangeListener { _, has ->

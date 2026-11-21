@@ -205,9 +205,11 @@ class QuizService : AccessibilityService() {
             pendingUnknown = question.text to optTexts
             pendingRects = options.map { Rect(it.rect) }
             val key = prefs.getString(KEY_GEMINI_KEY, "").orEmpty().trim()
-            if (prefs.getBoolean(KEY_GEMINI_ON, false) && key.isNotEmpty()) {
-                log("UNKNOWN: \"${question.text}\"\n   options: ${optTexts.joinToString(" | ")}\n   -> looking it up online (Gemini)...")
-                askOnline(key, question.text, optTexts, signature)
+            val useGemini = prefs.getBoolean(KEY_GEMINI_ON, false) && key.isNotEmpty()
+            val useWeb = prefs.getBoolean(KEY_WEB_ON, true)
+            if (useGemini || useWeb) {
+                log("UNKNOWN: \"${question.text}\"\n   options: ${optTexts.joinToString(" | ")}\n   -> looking it up online...")
+                askOnline(key, useGemini, useWeb, question.text, optTexts, signature)
             } else {
                 log("UNKNOWN: \"${question.text}\"\n   options: ${optTexts.joinToString(" | ")}\n   -> tap the answer and Check yourself; it's saved if Correct.")
                 toast("QuizBot: new question - answer it yourself")
@@ -227,15 +229,27 @@ class QuizService : AccessibilityService() {
     }
 
     /** Ask Gemini (with Google Search) in the background, then tap its answer if the question is still on screen. */
-    private fun askOnline(key: String, q: String, opts: List<String>, signature: String) {
+    private fun askOnline(key: String, useGemini: Boolean, useWeb: Boolean, q: String, opts: List<String>, signature: String) {
         Thread {
-            val res = try { GeminiHelper.ask(key, q, opts, prefs.getString(KEY_GEMINI_MODEL, null)) }
-                      catch (e: Exception) { null.also { handler.post {
-                          log("Online lookup failed (${e.message}) - answer it yourself; it's saved if Correct.")
-                          toast("QuizBot: lookup failed - answer it yourself")
-                      } } }
-            if (res != null) handler.post {
-                prefs.edit().putString(KEY_GEMINI_MODEL, res.model).apply()
+            var idx: Int? = null
+            var how = ""
+            val problems = mutableListOf<String>()
+            // 1) Free Quran-verse search (no key) for "which surah has the verse ..." questions.
+            if (useWeb) try { WebLookup.answer(q, opts)?.let { idx = it.index; how = it.how } }
+                        catch (e: Exception) { problems += "Quran search: ${e.message}" }
+            // 2) Gemini, if a working key is set up.
+            if (idx == null && useGemini) try {
+                val r = GeminiHelper.ask(key, q, opts, prefs.getString(KEY_GEMINI_MODEL, null))
+                prefs.edit().putString(KEY_GEMINI_MODEL, r.model).apply()
+                idx = r.index; how = r.model
+            } catch (e: Exception) { problems += "Gemini: ${e.message}" }
+            val found = idx
+            if (found == null) handler.post {
+                log("Not found online${if (problems.isEmpty()) "" else " (" + problems.joinToString("; ") + ")"} - answer it yourself; it's saved if Correct.")
+                toast("QuizBot: new question - answer it yourself")
+            }
+            else handler.post {
+                val res = object { val index: Int = found!!; val model = how }
                 if (lastSignature != signature) { log("Online answer arrived too late (question changed)."); return@post }
                 val answer = opts[res.index]
                 val root = rootInActiveWindow ?: return@post
@@ -394,6 +408,7 @@ class QuizService : AccessibilityService() {
         const val KEY_GEMINI_KEY = "gemini_key"
         const val KEY_GEMINI_ON = "gemini_on"
         const val KEY_GEMINI_MODEL = "gemini_model"
+        const val KEY_WEB_ON = "web_lookup_on"
         const val KEY_COLLECT_TARGET = "collect_target"
         private const val TICK_MS = 1200L
 
