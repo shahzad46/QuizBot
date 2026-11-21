@@ -3288,5 +3288,85 @@
    "No, Hajj is valid without it",
    "No"
   ]
+ },
+ {
+  "keys": [
+   "What yearned for the Prophet ﷺ when he moved away from it to the minbar?",
+   "yearned for the prophet",
+   "moved away from it to the minbar",
+   "yearned"
+  ],
+  "a": [
+   "The trunk of the palm tree",
+   "The palm trunk",
+   "trunk of the palm tree"
+  ]
+ },
+ {
+  "keys": [
+   "What is the miqat of the people of the Levant (Sham) and Egypt?",
+   "miqat of the people of the levant",
+   "miqat of the people of sham",
+   "miqat of the people of egypt"
+  ],
+  "a": [
+   "Al-Juhfah",
+   "Juhfah"
+  ]
+ },
+ {
+  "keys": [
+   "Approximately how many years did the revelation of the Holy Quran last?",
+   "how many years did the revelation",
+   "revelation of the holy quran last",
+   "revelation of the quran last"
+  ],
+  "a": [
+   "23 years",
+   "Twenty-three years"
+  ]
+ },
+ {
+  "keys": [
+   "What is the name of the tawaf that is a pillar of Hajj, performed on the day of Eid or after it?",
+   "tawaf that is a pillar of hajj",
+   "pillar of hajj, performed on the day of eid"
+  ],
+  "a": [
+   "Tawaf al-Ifadah",
+   "Tawaf al-Ifada"
+  ]
+ },
+ {
+  "keys": [
+   "What is the recompense for whoever intends harm to the people of Medina, as in the hadith?",
+   "intends harm to the people of medina",
+   "harm to the people of medina",
+   "intends harm to the people of madinah"
+  ],
+  "a": [
+   "God will dissolve him as salt dissolves in water",
+   "Allah will dissolve him as salt dissolves in water",
+   "dissolve"
+  ]
+ },
+ {
+  "keys": [
+   "Complete the hadith: “Between my house and my minbar ...”",
+   "between my house and my minbar"
+  ],
+  "a": [
+   "A garden from the gardens of Paradise"
+  ]
+ },
+ {
+  "keys": [
+   "Complete the hadith: “The best of you are those who learn the Quran ...”",
+   "best of you are those who learn the quran"
+  ],
+  "a": [
+   "And taught it",
+   "And teach it"
+  ]
  }
 ]
