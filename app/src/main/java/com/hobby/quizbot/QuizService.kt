@@ -57,6 +57,15 @@ class QuizService : AccessibilityService() {
     private var shotFailLogged = false
     private var lastBotQuestion: String? = null
     private var prevShot: List<IntArray>? = null                     // previous screenshot's option pixels
+    private var prevPrevShot: List<IntArray>? = null                 // the one before that
+    private var prevWasClear = false
+    private var prevPrevWasClear = false
+    private var sentinelBox: Rect? = null                            // text between the options and Check: the result sheet covers it first
+    private var baseSentinel: IntArray? = null
+    private var sentinelStuck = 0
+    private var lastPick: Int? = null                                // option that stood out in the newest clear screenshot
+    private val pickHistory = StringBuilder()                        // per clear screenshot: option number or '-'
+    private var coveredCount = 0
     private var lastClearShot: List<IntArray>? = null                // newest screenshot with the options uncovered
     private val stepFrames = ArrayList<Pair<Int, List<IntArray>>>()  // (option that suddenly changed, frame before it)
     private var learnHow = ""                                        // how pendingLearn was found
@@ -251,41 +260,54 @@ class QuizService : AccessibilityService() {
 
     /**
      * Your tap shows up as ONE option changing colour suddenly and staying changed, while the others don't.
-     * Earlier versions compared every screenshot with one taken when the question appeared; Nusuk's moving
-     * background slowly changes all options, so after ~20-30 s every option looked "changed" and the tap
-     * was never recognised. Now each screenshot is compared with the previous one (a sudden change), and the
-     * change must still be there in the last screenshot before the result sheet covers the options.
+     * Each screenshot is compared with the previous two (a sudden change). Screenshots where the result sheet
+     * is sliding up (it covers the text under the options first), another app is open, or several options
+     * change at once are skipped, so the sheet covering the bottom option is not mistaken for your tap.
+     * A choice counts once it shows in two screenshots in a row, or in the last clear one before the result.
      */
     private fun analyseShot(bmp: android.graphics.Bitmap) {
         val (q, opts) = pendingUnknown ?: return
         if (tapFrozen || optionBoxes.size != opts.size) return
         val cur = optionBoxes.map { sample(bmp, it) }
+        val sent = sentinelBox?.let { sample(bmp, it) }
         val base = baseShots
         if (base == null || System.currentTimeMillis() - pendingSince < 1500) {
-            baseShots = cur; prevShot = cur; lastClearShot = cur; return
+            baseShots = cur; baseSentinel = sent; prevShot = cur; prevWasClear = true
+            prevPrevShot = null; prevPrevWasClear = false; lastClearShot = cur; return
         }
         val prev = prevShot ?: cur
-        prevShot = cur
         val vsPrev = cur.indices.map { changedFraction(prev[it], cur[it]) }
         val vsBase = cur.indices.map { changedFraction(base[it], cur[it]) }
         val need = minOf(3, opts.size)
-        // Most options changed a lot at once = the result sheet is sliding over them: decide now.
-        if (vsPrev.count { it > 0.3 } >= need || vsBase.count { it > 0.5 } >= need) {
-            finalizeTap()
-            tapFrozen = true
-            return
-        }
+        val bs = baseSentinel
+        var sentinelMoved = sent != null && bs != null && changedFraction(bs, sent) > 0.25
+        if (sentinelMoved && vsBase.all { it < 0.1 }) {
+            // The text under the options changed but no option did: if that lasts, it's just that area animating.
+            if (++sentinelStuck >= 5) { baseSentinel = sent; sentinelMoved = false; sentinelStuck = 0 }
+        } else sentinelStuck = 0
+        val clear = !sentinelMoved && vsBase.count { it > 0.5 } < need && vsPrev.count { it > 0.3 } < 2
+        val older = listOfNotNull(prev.takeIf { prevWasClear }, prevPrevShot.takeIf { prevPrevWasClear })
+        prevPrevShot = prevShot; prevPrevWasClear = prevWasClear
+        prevShot = cur; prevWasClear = clear
+        if (!clear) { coveredCount++; return }
+
         shotCount++
         lastClearShot = cur
-        val order = vsPrev.indices.sortedByDescending { vsPrev[it] }
-        val best = order[0]
-        val second = vsPrev[order[1]]
-        biggestStep = maxOf(biggestStep, vsPrev[best])
-        if (vsPrev[best] > 0.03 && vsPrev[best] > 3 * maxOf(second, 0.005)) {
-            stepFrames.add(best to prev)
-            if (stepFrames.size > 6) stepFrames.removeAt(0)
+        for (before in older) {
+            val d = cur.indices.map { changedFraction(before[it], cur[it]) }
+            val order = d.indices.sortedByDescending { d[it] }
+            biggestStep = maxOf(biggestStep, d[order[0]])
+            if (d[order[0]] > 0.03 && d[order[0]] > 3 * maxOf(d[order[1]], 0.005)) {
+                stepFrames.add(order[0] to before)
+                if (stepFrames.size > 6) stepFrames.removeAt(0)
+                break
+            }
         }
-        pickTap(cur)?.let { choose(q, opts[it], "screen colours") }
+        val pick = pickTap(cur)
+        pickHistory.append(pick?.let { '1' + it } ?: '-')
+        if (pickHistory.length > 40) pickHistory.deleteCharAt(0)
+        if (pick != null && pick == lastPick) choose(q, opts[pick], "screen colours")
+        lastPick = pick
     }
 
     /** Newest sudden single-option change that is still visible in [now]; else a plain change since the start. */
@@ -301,13 +323,10 @@ class QuizService : AccessibilityService() {
         return order[0].takeIf { f[it] > 0.02 && f[it] > 2.5 * maxOf(f[order[1]], 0.005) && f.count { x -> x > 0.15 } < 2 }
     }
 
-    /** Last look at the options before the result covers them: keep only a choice that is still visible. */
+    /** Result is showing: the option that stood out in the last clear screenshot wins; else keep the earlier choice. */
     private fun finalizeTap() {
         val (q, opts) = pendingUnknown ?: return
-        val last = lastClearShot ?: return
-        val idx = pickTap(last)
-        if (idx != null) choose(q, opts[idx], "screen colours")
-        else if (learnHow == "screen colours") { pendingLearn = null; learnHow = "" }   // it was only a passing flicker
+        lastPick?.let { choose(q, opts[it], "screen colours") }
     }
 
     /** What an option looks like to accessibility: state flags, size and children of its button. */
@@ -413,8 +432,10 @@ class QuizService : AccessibilityService() {
         unknownSince = 0L
         bank.reloadIfChanged()
         val above = nodes.filter { it.rect.bottom <= check.rect.top + 5 }
-        val question = above.filter { it.text.contains("?") }.maxByOrNull { it.text.length }
-            ?: above.filter { it.text.length > 20 }.maxByOrNull { it.text.length }
+        val qCandidates = above.filter { NOT_OPTIONS.none { p -> it.norm.startsWith(p) } }
+        val question = qCandidates.filter { it.text.contains("?") }.maxByOrNull { it.text.length }
+            ?: qCandidates.filter { it.text.length > 20 }.maxByOrNull { it.text.length }   // e.g. "Complete the hadith: ..."
+
         val options = if (question == null) emptyList<TextNode>() else above
             .filter { it.rect.top >= question.rect.bottom - 5 && it !== question }
             .filter { it.text.length <= 150 && NOT_OPTIONS.none { p -> it.norm.startsWith(p) } }
@@ -461,10 +482,15 @@ class QuizService : AccessibilityService() {
             baseShots = null
             prevShot = null; lastClearShot = null; stepFrames.clear()
             learnHow = ""; shotCount = 0; biggestStep = 0.0; shotFailLogged = false
+            prevPrevShot = null; prevWasClear = false; prevPrevWasClear = false
+            lastPick = null; pickHistory.setLength(0); coveredCount = 0; sentinelStuck = 0; baseSentinel = null
+            val lowest = optionBoxes.maxOf { it.bottom }
+            sentinelBox = nodes.firstOrNull { it.norm.startsWith("your key can unlock") && it.rect.top >= lowest - 5 }?.let { Rect(it.rect) }
+                ?: Rect(optionBoxes.minOf { it.left }, lowest + 10, optionBoxes.maxOf { it.right }, check.rect.top - 10)
+                    .takeIf { it.height() >= 20 && it.width() > 0 }
             handler.removeCallbacks(shotLoop)
             handler.postDelayed(shotLoop, 1600)
             log("UNKNOWN: \"${question.text}\"\n   options: ${optTexts.joinToString(" | ")}\n   -> tap the answer and Check yourself; it's saved if Correct.")
-            toast("QuizBot: new question - answer it yourself")
             return
         }
 
@@ -505,9 +531,9 @@ class QuizService : AccessibilityService() {
             }
             if (pendingLearn == null && pendingUnknown != null) {
                 log("Couldn't tell which option you tapped, so this answer wasn't saved. " +
-                    "(screenshots: $shotCount, sudden changes: ${stepFrames.size}, biggest: ${"%.2f".format(biggestStep)})")
-                log("Result screen, to see if it names the answer:")
-                dump(rootInActiveWindow?.packageName?.toString() ?: "", nodes.filter { headline == null || it.rect.bottom >= headline.rect.top })
+                    "(screenshots: $shotCount clear + $coveredCount skipped, sudden changes: ${stepFrames.size}, " +
+                    "biggest: ${"%.2f".format(biggestStep)}, picks: ${pickHistory.takeLast(20).ifEmpty { "none" }}, " +
+                    "sentinel: ${if (sentinelBox != null) "yes" else "no"})")
             }
             pendingLearn?.let { (q, a) ->
                 if (correct || learnHow == "result text") { bank.learn(q, a); log("LEARNED: \"$q\" -> $a"); shareLearned() }
