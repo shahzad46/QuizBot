@@ -39,6 +39,7 @@ class QuizService : AccessibilityService() {
     private var lastActionAt = 0L
     private var unknownSince = 0L
     private var lastResultLogged: String? = null
+    private var resultSeenAt = 0L
 
     private var pendingUnknown: Pair<String, List<String>>? = null   // question waiting for your tap
     private var pendingRects: List<Rect> = emptyList()               // where its options are on screen
@@ -400,6 +401,13 @@ class QuizService : AccessibilityService() {
         unknownSince = 0L
         val headline = nodes.firstOrNull { it.norm.startsWith("correct") || it.norm.startsWith("wrong") ||
                 it.norm.startsWith("incorrect") || it.norm.contains("not correct") || it.norm.startsWith("unfortunately") }
+        // The result sheet slides in: give the "Correct!/Wrong answer" headline a moment to appear.
+        val now = System.currentTimeMillis()
+        if (headline == null && pendingUnknown != null) {
+            if (resultSeenAt == 0L) resultSeenAt = now
+            if (now - resultSeenAt < 3000) return
+        }
+        resultSeenAt = 0L
         val correct = headline?.norm?.startsWith("correct") == true
         val resultKey = (lastSignature ?: "") + (headline?.norm ?: "")
         if (resultKey != lastResultLogged) {
