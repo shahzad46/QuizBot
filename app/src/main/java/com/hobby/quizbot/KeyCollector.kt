@@ -18,8 +18,9 @@ import android.view.accessibility.AccessibilityNodeInfo
  * "Get new keys", as two separate steps the user starts one after the other:
  *
  * 1. COLLECT (switch "1. Collect keys") - open nusukkey.xyz in the browser once and read every
- *    code on the page (featured code + "More codes" list), tapping "Show 20 new codes" until no
- *    new codes appear. The codes are saved on the phone, then QuizBot shows a notification
+ *    code on the page (featured code + "More codes" list), reloading the page (or tapping
+ *    "Show 20 new codes" if the site has it) until no new codes appear.
+ *    The codes are saved on the phone, then QuizBot shows a notification
  *    "N keys collected" and switches itself off.
  * 2. ENTER (switch "2. Enter keys") - the user opens Nusuk's "Your keys" page themselves
  *    ("Add code to get new key"). As soon as the code box and "Check the code" are on screen,
@@ -41,6 +42,8 @@ class KeyCollector(private val svc: QuizService) {
     private var lastMore = 0L
     private var lastOpenSite = 0L
     private var found = 0
+    private var dumped = false
+    private var browserPkg: String? = null
 
     // enter
     private var phase = Phase.SUBMIT
@@ -59,7 +62,7 @@ class KeyCollector(private val svc: QuizService) {
     fun reset() {
         if (mode == Mode.NONE) return
         mode = Mode.NONE
-        noGrowth = 0; lastMore = 0L; found = 0
+        noGrowth = 0; lastMore = 0L; found = 0; dumped = false; browserPkg = null
         phase = Phase.SUBMIT; current = null
         tried = 0; added = 0; failsInRow = 0
         onPageSince = 0L; waitHintAt = 0L
@@ -76,24 +79,26 @@ class KeyCollector(private val svc: QuizService) {
             openSite()
             return
         }
-        val wins = svc.visibleRoots()
-        val browser = wins.firstOrNull { (pkg, root) ->
-            pkg != NUSUK_PKG && svc.collect(root, includeHidden = true).any { CODE_RE.matches(it.text.trim()) }
-        }?.second
-        if (browser == null) {
+        val wins = svc.visibleRoots().filter { it.first != NUSUK_PKG }
+        // The codes can sit inside a longer text ("NG-ab12CD34 · 206 uses Open"), so search inside every text.
+        val withCodes = wins.map { (pkg, root) -> Triple(pkg, root, codesIn(root)) }
+        val page = withCodes.firstOrNull { it.third.isNotEmpty() }
+        if (page == null) {
             if (now - lastOpenSite > 10_000 && now - startedAt < 30_000) openSite()
+            if (!dumped && now - startedAt > 15_000) {
+                dumped = true
+                if (wins.isEmpty()) svc.log("Collect keys: no browser window visible.")
+                for ((pkg, root) in wins.take(2)) svc.dump(pkg, svc.collect(root, includeHidden = true).take(60))
+            }
             if (now - startedAt > 45_000) {
                 if (found > 0) finishCollect("the page closed") else stopCollect("Couldn't read any codes from nusukkey.xyz")
             }
             return
         }
-        val nodes = svc.collect(browser, includeHidden = true)
+        if (browserPkg != page.first) { browserPkg = page.first; svc.log("Reading codes in ${page.first}") }
         val stored = storedCodes(prefs)
         val used = usedCodes()
-        val fresh = nodes.map { it.text.trim() }
-            .filter { CODE_RE.matches(it) && it !in used }
-            .distinct()
-            .filter { it !in stored }
+        val fresh = page.third.filter { it !in used && it !in stored }
         if (fresh.isNotEmpty()) {
             saveCodes((stored + fresh).takeLast(MAX_STORED))
             found += fresh.size
@@ -101,8 +106,9 @@ class KeyCollector(private val svc: QuizService) {
         }
         if (now - startedAt > MAX_COLLECT_MS) { finishCollect("time limit"); return }
 
-        // Ask the site for more codes until it stops giving new ones.
-        if (now - lastMore > 3000) {
+        // Ask the site for more codes until it stops giving new ones: tap "Show ... new codes" if the page
+        // has it, otherwise reload the page (the site swaps in fresh codes).
+        if (now - lastMore > 5000) {
             if (fresh.isEmpty() && lastMore != 0L) noGrowth++ else noGrowth = 0
             if (noGrowth >= 4) {
                 if (storedCodes(prefs).isEmpty()) stopCollect("The site showed no new codes")
@@ -110,12 +116,30 @@ class KeyCollector(private val svc: QuizService) {
                 return
             }
             lastMore = now
-            val more = nodes.firstOrNull { it.norm.startsWith("show 20 new codes") || it.norm.startsWith("show new codes") }
+            val more = svc.collect(page.second, includeHidden = true)
+                .firstOrNull { it.norm.startsWith("show 20 new codes") || it.norm.startsWith("show new codes") }
             if (more != null) {
                 more.node.performAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_SHOW_ON_SCREEN.id)
                 svc.click(more)
-            }
+            } else openSite()
         }
+    }
+
+    /** Every real code (NG-xxxxxxxx) in a window's texts and descriptions, in screen order. */
+    private fun codesIn(root: AccessibilityNodeInfo): List<String> {
+        val out = LinkedHashSet<String>()
+        fun walk(n: AccessibilityNodeInfo?, d: Int) {
+            if (n == null || d > 80) return
+            for (t in listOf(n.text, n.contentDescription)) {
+                if (t != null && t.length >= 11) CODE_RE.findAll(t).forEach { m ->
+                    val c = m.value
+                    if (!c.substring(3).all { it == 'X' || it == 'x' }) out += c   // skip the "NG-XXXXXXXX" example
+                }
+            }
+            for (i in 0 until n.childCount) walk(n.getChild(i), d + 1)
+        }
+        walk(root, 0)
+        return out.toList()
     }
 
     private fun finishCollect(why: String) {
@@ -347,7 +371,7 @@ class KeyCollector(private val svc: QuizService) {
         private const val MAX_STORED = 500
         private const val MAX_COLLECT_MS = 4 * 60_000L
         private const val MAX_WAIT_MS = 10 * 60_000L
-        val CODE_RE = Regex("NG-[A-Za-z0-9]{5,14}")
+        val CODE_RE = Regex("(?<![A-Za-z0-9])NG-[A-Za-z0-9]{6,12}(?![A-Za-z0-9])")
         private val ERROR_WORDS = listOf("already", "invalid", "not valid", "expired", "wrong", "not found",
             "error", "try again", "limit", "cannot", "can t", "unable")
 
