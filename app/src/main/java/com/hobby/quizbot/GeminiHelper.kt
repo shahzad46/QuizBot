@@ -13,7 +13,8 @@ import java.net.URL
 object GeminiHelper {
 
     /** Tried in order; the first one the key can use is remembered. */
-    val MODELS = listOf("gemini-flash-latest", "gemini-3.5-flash-lite", "gemini-3.8-flash", "gemini-2.5-flash")
+    val MODELS = listOf("gemini-flash-latest", "gemini-3.5-flash-lite", "gemini-3.8-flash", "gemini-2.5-flash",
+        "gemma-4-31b-it", "gemma-4-26b-a4b-it")
 
     data class Result(val index: Int, val model: String, val raw: String)
 
@@ -31,9 +32,13 @@ object GeminiHelper {
             .filter { available.isEmpty() || it in available }
         if (order.isEmpty()) throw IllegalStateException("this key has no Gemini Flash model available")
         val errors = mutableListOf<String>()
-        for (model in order.take(6)) {
+        for (model in order.take(12)) {
             try {
-                val text = call(key, model, prompt)
+                // Web search first; if this model can't use the search tool, ask it without.
+                val text = try { call(key, model, prompt, useSearch = true) }
+                           catch (e: ModelUnavailable) {
+                               if (e.message?.startsWith("HTTP 400") == true) call(key, model, prompt, useSearch = false) else throw e
+                           }
                 val n = Regex("\\b([1-9])\\b").find(text)?.groupValues?.get(1)?.toInt()
                     ?: throw IllegalStateException("no option number in reply: ${text.take(80)}")
                 if (n < 1 || n > options.size) throw IllegalStateException("option $n out of range")
@@ -66,8 +71,10 @@ object GeminiHelper {
                 methods != null && (0 until methods.length()).any { methods.getString(it) == "generateContent" }
             }.map { it.getString("name").removePrefix("models/") }
             val bad = listOf("tts", "image", "live", "audio", "embedding", "vision", "transcribe", "omni", "robotics", "computer-use")
-            return names.filter { n -> n.contains("flash") && bad.none { n.contains(it) } }
+            // Flash models first, then Gemma (separate free allowance, used when Flash has no free quota).
+            return names.filter { n -> (n.contains("flash") || n.contains("gemma")) && bad.none { n.contains(it) } }
                 .sortedWith(compareBy(
+                    { if (it.contains("gemma")) 1 else 0 },
                     { if (it == "gemini-flash-latest") 0 else 1 },
                     { if (it.contains("preview") || it.contains("exp")) 1 else 0 },
                     { -(Regex("gemini-(\\d+(?:\\.\\d+)?)").find(it)?.groupValues?.get(1)?.toDoubleOrNull() ?: 0.0) }
@@ -79,10 +86,10 @@ object GeminiHelper {
 
     private class ModelUnavailable(msg: String) : Exception(msg)
 
-    private fun call(key: String, model: String, prompt: String): String {
+    private fun call(key: String, model: String, prompt: String, useSearch: Boolean): String {
         val body = JSONObject()
             .put("contents", JSONArray().put(JSONObject().put("parts", JSONArray().put(JSONObject().put("text", prompt)))))
-            .put("tools", JSONArray().put(JSONObject().put("google_search", JSONObject())))
+        if (useSearch) body.put("tools", JSONArray().put(JSONObject().put("google_search", JSONObject())))
         val conn = URL("https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent")
             .openConnection() as HttpURLConnection
         conn.requestMethod = "POST"
