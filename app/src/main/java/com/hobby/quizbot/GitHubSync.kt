@@ -10,7 +10,7 @@ import java.net.URL
 /**
  * Shares learned answers between phones through the GitHub repo:
  *   upload   -> learned/<this-phone>.json   (needs a token with Contents: read & write on the repo)
- *   download -> every learned/*.json, merged (works without a token; the repo is public)
+ *   download -> every learned/<phone>.json file, merged (works without a token; the repo is public)
  * Each phone writes only its own file, so phones never overwrite each other.
  * Blocking - call from a background thread.
  */
