@@ -1,5 +1,6 @@
 package com.hobby.quizbot
 
+import android.accessibilityservice.AccessibilityService
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -56,16 +57,20 @@ class KeyCollector(private val svc: QuizService) {
     private var resultAt = 0L
     private var onPageSince = 0L
     private var waitHintAt = 0L
+    private var waitDumped = false
+    private var checkTaps = 0
+    private var lastCheckTap = 0L
 
     private val prefs get() = svc.prefs
 
     fun reset() {
         if (mode == Mode.NONE) return
+        if (mode == Mode.ENTER) keyboard(hidden = false)
         mode = Mode.NONE
         noGrowth = 0; lastMore = 0L; found = 0; dumped = false; browserPkg = null
         phase = Phase.SUBMIT; current = null
         tried = 0; added = 0; failsInRow = 0
-        onPageSince = 0L; waitHintAt = 0L
+        onPageSince = 0L; waitHintAt = 0L; waitDumped = false; checkTaps = 0
     }
 
     // ================================================================ 1. collect codes
@@ -169,6 +174,7 @@ class KeyCollector(private val svc: QuizService) {
             mode = Mode.ENTER; startedAt = now; waitHintAt = now
             val n = storedCodes(prefs).size
             if (n == 0) { stopEnter("No saved keys. Run '1. Collect keys' first"); return }
+            keyboard(hidden = true)   // so the keyboard can't cover "Check the code"
             svc.log("Enter keys: $n keys ready. Open Nusuk > Your keys > 'Add code to get new key'.")
             svc.toast("QuizBot: open Nusuk's Your keys page")
             return
@@ -195,6 +201,7 @@ class KeyCollector(private val svc: QuizService) {
                 waitHintAt = now
                 svc.log("Enter keys: waiting for Nusuk's 'Add code to get new key' page " +
                     "(${storedCodes(prefs).size} keys left).")
+                if (!waitDumped && added + tried > 0) { waitDumped = true; svc.dump(NUSUK_PKG, nodes.take(60)) }
             }
             if (now - maxOf(startedAt, resultAt) > MAX_WAIT_MS) stopEnter("Nusuk's code page didn't appear for 10 minutes")
             return
@@ -206,6 +213,8 @@ class KeyCollector(private val svc: QuizService) {
             ?: run { stopEnter("All saved keys tried"); return }
         current = code
         typeCode(field!!, code)
+        checkTaps = 0
+        lastCheckTap = now + 1400
         svc.handler.postDelayed({ pressCheck(code) }, 900)
         submittedAt = now
         tried++
@@ -217,7 +226,6 @@ class KeyCollector(private val svc: QuizService) {
             putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, code)
         }
         field.performAction(AccessibilityNodeInfo.ACTION_FOCUS)
-        field.performAction(AccessibilityNodeInfo.ACTION_CLICK)
         field.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)
     }
 
@@ -242,11 +250,29 @@ class KeyCollector(private val svc: QuizService) {
                 } catch (e: Exception) { svc.log("Couldn't paste the code: ${e.message}") }
             }
         }
-        svc.handler.postDelayed({
-            svc.visibleRoots().firstOrNull { it.first == NUSUK_PKG }?.second?.let { r ->
-                svc.collect(r).firstOrNull { it.norm == "check the code" }?.let { svc.click(it) }
+        svc.handler.postDelayed({ tapCheck() }, 500)
+    }
+
+    /**
+     * Press "Check the code" with a real finger tap on the button: Nusuk ignores the accessibility
+     * click on it (the user had to press it themselves on build-31).
+     */
+    private fun tapCheck(): Boolean {
+        val r = svc.visibleRoots().firstOrNull { it.first == NUSUK_PKG }?.second ?: return false
+        val btn = svc.collect(r).lastOrNull { it.norm == "check the code" } ?: return false
+        checkTaps++
+        val b = btn.rect
+        svc.tap(b.exactCenterX(), b.exactCenterY())
+        if (checkTaps > 1) {
+            // Second try: also send the accessibility click to the button and the views around it.
+            var n: AccessibilityNodeInfo? = btn.node; var d = 0
+            while (n != null && d < 4) {
+                if (n.isClickable) { n.performAction(AccessibilityNodeInfo.ACTION_CLICK); break }
+                n = n.parent; d++
             }
-        }, 400)
+        }
+        svc.log("Pressed 'Check the code' (try $checkTaps)")
+        return true
     }
 
     private fun waitResult(now: Long, nusuk: AccessibilityNodeInfo?) {
@@ -264,7 +290,13 @@ class KeyCollector(private val svc: QuizService) {
                 nodes.firstOrNull { it.norm.startsWith("add another code") }?.let { lastNav = now; svc.click(it) }
                 nextCode(now)
             }
-            (err != null && elapsed > 3500) || elapsed > 12_000 -> {
+            err == null && checkTaps < 3 && now - lastCheckTap > 3500 &&
+                nodes.any { it.norm == "check the code" } -> {
+                // Still on the code page with no answer: the tap didn't register, press again.
+                lastCheckTap = now
+                tapCheck()
+            }
+            (err != null && elapsed > 3500) || elapsed > 15_000 -> {
                 consume(code)
                 failsInRow++
                 svc.log("✘ $code -> ${err?.text ?: "no response"} ($failsInRow failed in a row)")
@@ -290,6 +322,13 @@ class KeyCollector(private val svc: QuizService) {
     }
 
     // ================================================================ helpers
+
+    private fun keyboard(hidden: Boolean) {
+        try {
+            svc.softKeyboardController.showMode =
+                if (hidden) AccessibilityService.SHOW_MODE_HIDDEN else AccessibilityService.SHOW_MODE_AUTO
+        } catch (_: Exception) {}
+    }
 
     private fun isSuccess(n: QuizService.TextNode) =
         n.norm.startsWith("congratulations") || n.norm.startsWith("you got a new key")
