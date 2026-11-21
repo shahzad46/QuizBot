@@ -38,7 +38,7 @@ Hobby Android app that plays the **Nusuk** app's daily Umrah-draw quiz on the ow
   found after 15 s it dumps the browser screen to the log), saves them in prefs
   (`stored_codes`), shows a notification "N keys collected" and switches itself off.
   **2. Enter keys**: the user opens Nusuk's **Your keys** → "Add code to get new key" page themselves; the bot
-  waits for the code box + **Check the code**, types each saved code (paste fallback) and checks it; tried
+  waits for the code box + **Check the code**, types each saved code (paste fallback) and presses Check with a real tap gesture (Nusuk ignores ACTION_CLICK there; keyboard hidden via softKeyboardController, retries twice); tried
   codes leave the list; stops after 10 failures in a row. Do NOT call nusukkey.xyz's internal API — only use
   the page like a person.
 - `MainActivity.kt` — control panel built in code (no layout XML).

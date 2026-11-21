@@ -666,7 +666,7 @@ class QuizService : AccessibilityService() {
         tap(t.rect.exactCenterX(), t.rect.exactCenterY())
     }
 
-    private fun tap(x: Float, y: Float) {
+    fun tap(x: Float, y: Float) {
         val path = Path().apply { moveTo(x, y) }
         val stroke = GestureDescription.StrokeDescription(path, 0, 60)
         dispatchGesture(GestureDescription.Builder().addStroke(stroke).build(), null, null)
