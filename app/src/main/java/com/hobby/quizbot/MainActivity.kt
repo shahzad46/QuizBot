@@ -106,6 +106,34 @@ class MainActivity : Activity() {
             prefs.edit().putBoolean(QuizService.KEY_DUMP, true).apply()
             Toast.makeText(this, "Now switch to the quiz screen", Toast.LENGTH_LONG).show()
         }
+        // ---- Share learned answers between phones via GitHub
+        root.addView(TextView(this).apply {
+            text = "\nShare learned answers between phones (GitHub)"
+            textSize = 16f
+        })
+        val tokenEdit = EditText(this).apply {
+            hint = "GitHub token (Contents: read & write on QuizBot)"
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD
+            setText(prefs.getString(QuizService.KEY_GH_TOKEN, ""))
+        }
+        root.addView(tokenEdit)
+        button("Save token & sync now") {
+            val token = tokenEdit.text.toString().trim()
+            prefs.edit().putString(QuizService.KEY_GH_TOKEN, token).apply()
+            Toast.makeText(this, "Syncing with GitHub...", Toast.LENGTH_SHORT).show()
+            Thread {
+                val msg = try {
+                    val bank = AnswerBank(this)
+                    if (token.isNotEmpty()) GitHubSync.upload(token, bank.learnedJson())
+                    val n = bank.downloadLatest()
+                    val up = if (token.isNotEmpty()) "uploaded ${bank.learnedCount} learned from this phone (${GitHubSync.deviceName()}); " else "no token, upload skipped; "
+                    "Sync done: " + up + "downloaded $n list entries + ${bank.sharedCount} shared" +
+                        (bank.sharedError?.let { " (shared download failed: $it)" } ?: "")
+                } catch (e: Exception) { "Sync failed: ${e.message}" }
+                runOnUiThread { BotLog.add(this, msg); Toast.makeText(this, msg, Toast.LENGTH_LONG).show(); refresh() }
+            }.start()
+        }
+
         button("Update answers from GitHub") {
             Toast.makeText(this, "Downloading...", Toast.LENGTH_SHORT).show()
             Thread {

@@ -21,6 +21,7 @@ class AnswerBank(private val ctx: Context) {
     private val entries = mutableListOf<Entry>()
     private val learnedFile get() = File(ctx.filesDir, "learned.json")
     private val remoteFile get() = File(ctx.filesDir, "remote_answers.json")
+    private val sharedFile get() = File(ctx.filesDir, "shared_learned.json")   // other phones' learned answers
     private var loadedStamp = -1L
 
     init { reload() }
@@ -34,11 +35,12 @@ class AnswerBank(private val ctx: Context) {
             remoteFile.delete()
             parse(ctx.assets.open("answers.json").bufferedReader().use { it.readText() }, learned = false)
         }
+        if (sharedFile.exists()) try { parse(sharedFile.readText(), learned = false) } catch (e: Exception) { sharedFile.delete() }
         if (learnedFile.exists()) parse(learnedFile.readText(), learned = true)
         loadedStamp = stamp()
     }
 
-    private fun stamp() = remoteFile.lastModified() * 31 + learnedFile.lastModified()
+    private fun stamp() = (remoteFile.lastModified() * 31 + learnedFile.lastModified()) * 31 + sharedFile.lastModified()
 
     /** Cheap check used before each question: reload if a download or a learned answer changed the files. */
     fun reloadIfChanged() { if (stamp() != loadedStamp) reload() }
@@ -57,11 +59,21 @@ class AnswerBank(private val ctx: Context) {
             val n = JSONArray(text).length()          // validate before saving
             if (n < 10) throw IllegalStateException("list looks too short ($n)")
             remoteFile.writeText(text)
+            // Learned answers that the phones shared through GitHub.
+            try {
+                val token = ctx.getSharedPreferences(QuizService.PREFS, Context.MODE_PRIVATE)
+                    .getString(QuizService.KEY_GH_TOKEN, null)
+                val shared = GitHubSync.downloadAll(token)
+                sharedFile.writeText(shared.toString())
+                sharedCount = shared.length()
+            } catch (e: Exception) { sharedError = e.message }
             return n
         } finally { conn.disconnect() }
     }
 
     val size get() = entries.size
+    var sharedCount = 0; private set
+    var sharedError: String? = null; private set
     val learnedCount get() = entries.count { it.learned }
 
     private fun parse(json: String, learned: Boolean) {

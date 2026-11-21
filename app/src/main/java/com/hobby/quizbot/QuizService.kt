@@ -83,12 +83,26 @@ class QuizService : AccessibilityService() {
         updateAnswers()
     }
 
+    /** Upload this phone's learned answers to GitHub (if a token is set). */
+    private fun shareLearned() {
+        val token = prefs.getString(KEY_GH_TOKEN, "").orEmpty().trim()
+        if (token.isEmpty()) return
+        val json = bank.learnedJson()
+        Thread {
+            val msg = try { GitHubSync.upload(token, json); "Shared learned answers to GitHub." }
+                      catch (e: Exception) { "Couldn't share to GitHub: ${e.message}" }
+            handler.post { log(msg) }
+        }.start()
+    }
+
     /** Fetch the latest answer list from GitHub in the background. */
     private fun updateAnswers() {
         Thread {
             val msg = try {
-                val n = AnswerBank(this).downloadLatest()
-                "Answer list updated from GitHub: $n entries."
+                val b = AnswerBank(this)
+                val n = b.downloadLatest()
+                "Answer list updated from GitHub: $n entries" +
+                    (b.sharedError?.let { "; shared answers: $it" } ?: ", plus ${b.sharedCount} shared by your phones") + "."
             } catch (e: Exception) {
                 "Couldn't update answers from GitHub (${e.message}); using the saved list."
             }
@@ -393,7 +407,7 @@ class QuizService : AccessibilityService() {
             if (pendingLearn == null && pendingUnknown != null)
                 log("Couldn't tell which option you tapped, so this answer wasn't saved.")
             pendingLearn?.let { (q, a) ->
-                if (correct) { bank.learn(q, a); log("LEARNED: \"$q\" -> $a") }
+                if (correct) { bank.learn(q, a); log("LEARNED: \"$q\" -> $a"); shareLearned() }
                 else log("Not saved (answer wasn't confirmed correct): $a")
             }
             if (!correct && lastBotQuestion != null) {
@@ -518,6 +532,7 @@ class QuizService : AccessibilityService() {
         const val KEY_DUMP = "dump_next"
         const val KEY_MAX = "max_answers"
         const val KEY_COLLECT = "collect_keys"
+        const val KEY_GH_TOKEN = "github_token"
         const val KEY_COLLECT_TARGET = "collect_target"
         private const val TICK_MS = 1200L
 
