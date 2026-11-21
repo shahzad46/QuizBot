@@ -81,7 +81,8 @@ class QuizService : AccessibilityService() {
         override fun run() {
             lastTick = System.currentTimeMillis()
             try {
-                if (prefs.getBoolean(KEY_COLLECT, false)) collector.tick()
+                if (prefs.getBoolean(KEY_COLLECT, false)) collector.tickCollect()
+                else if (prefs.getBoolean(KEY_ENTER, false)) collector.tickEnter()
                 else {
                     collector.reset()
                     if (prefs.getBoolean(KEY_ENABLED, false) || prefs.getBoolean(KEY_DUMP, false)) scanScreen()
@@ -654,6 +655,7 @@ class QuizService : AccessibilityService() {
         const val KEY_DUMP = "dump_next"
         const val KEY_MAX = "max_answers"
         const val KEY_COLLECT = "collect_keys"
+        const val KEY_ENTER = "enter_keys"
         const val KEY_GH_TOKEN = "github_token"
         const val KEY_COLLECT_TARGET = "collect_target"
         private const val TICK_MS = 1200L

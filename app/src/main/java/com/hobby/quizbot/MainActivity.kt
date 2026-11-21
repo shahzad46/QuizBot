@@ -1,9 +1,12 @@
 package com.hobby.quizbot
 
+import android.Manifest
 import android.app.Activity
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
 import android.text.InputType
@@ -25,6 +28,8 @@ class MainActivity : Activity() {
     private lateinit var logView: TextView
     private lateinit var toggle: Switch
     private lateinit var collectToggle: Switch
+    private lateinit var enterToggle: Switch
+    private lateinit var storedView: TextView
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -68,38 +73,52 @@ class MainActivity : Activity() {
         maxRow.addView(maxEdit, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
         root.addView(maxRow)
 
-        // ---- Key collection from nusukkey.xyz
+        // ---- Get new keys from nusukkey.xyz, in two steps
         root.addView(TextView(this).apply {
             text = "\nGet new keys (codes from nusukkey.xyz)"
             textSize = 16f
         })
-        val targetRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        targetRow.addView(TextView(this).apply { text = "Codes to gather: " })
-        val targetEdit = EditText(this).apply {
-            inputType = InputType.TYPE_CLASS_NUMBER
-            setText(prefs.getInt(QuizService.KEY_COLLECT_TARGET, 50).toString())
-            setOnFocusChangeListener { _, has ->
-                if (!has) text.toString().toIntOrNull()?.let { prefs.edit().putInt(QuizService.KEY_COLLECT_TARGET, it).apply() }
-            }
-        }
-        targetRow.addView(targetEdit, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
-        root.addView(targetRow)
+        storedView = TextView(this).apply { textSize = 14f }
+        root.addView(storedView)
         collectToggle = Switch(this).apply {
-            text = "Get new keys"
+            text = "1. Collect keys (opens nusukkey.xyz)"
             textSize = 16f
             isChecked = prefs.getBoolean(QuizService.KEY_COLLECT, false)
             setOnCheckedChangeListener { _, on ->
-                targetEdit.text.toString().toIntOrNull()?.let { prefs.edit().putInt(QuizService.KEY_COLLECT_TARGET, it).apply() }
-                prefs.edit().putBoolean(QuizService.KEY_COLLECT, on).apply()
-                BotLog.add(this@MainActivity, if (on) "Get new keys ON (gather ${prefs.getInt(QuizService.KEY_COLLECT_TARGET, 50)} codes)" else "Get new keys OFF")
+                if (on == prefs.getBoolean(QuizService.KEY_COLLECT, false)) return@setOnCheckedChangeListener
+                val e = prefs.edit().putBoolean(QuizService.KEY_COLLECT, on)
+                if (on) e.putBoolean(QuizService.KEY_ENTER, false)   // only one step at a time
+                e.apply()
+                BotLog.add(this@MainActivity, if (on) "Collect keys ON" else "Collect keys OFF")
+                refresh()
             }
         }
         root.addView(collectToggle)
+        enterToggle = Switch(this).apply {
+            text = "2. Enter keys in Nusuk"
+            textSize = 16f
+            isChecked = prefs.getBoolean(QuizService.KEY_ENTER, false)
+            setOnCheckedChangeListener { _, on ->
+                if (on == prefs.getBoolean(QuizService.KEY_ENTER, false)) return@setOnCheckedChangeListener
+                val e = prefs.edit().putBoolean(QuizService.KEY_ENTER, on)
+                if (on) e.putBoolean(QuizService.KEY_COLLECT, false)   // only one step at a time
+                e.apply()
+                BotLog.add(this@MainActivity, if (on) "Enter keys ON (${KeyCollector.storedCodes(prefs).size} saved keys)" else "Enter keys OFF")
+                refresh()
+            }
+        }
+        root.addView(enterToggle)
+        button("Clear saved keys") {
+            KeyCollector.saveCodes(prefs, emptyList())
+            BotLog.add(this, "Saved keys cleared")
+            refresh()
+        }
         root.addView(TextView(this).apply {
             textSize = 12f
-            text = "QuizBot opens nusukkey.xyz, gathers the codes, then switches to Nusuk and tries them one by one " +
-                "(stops after 10 failures in a row). Xiaomi: allow QuizBot 'Display pop-up windows while running in the background'. " +
-                "If 'Bot running' is also on, it plays the quiz with the new keys afterwards.\n"
+            text = "Step 1: QuizBot opens nusukkey.xyz, collects every code it can find and tells you when it's done. " +
+                "Step 2: turn on 'Enter keys', then open Nusuk > Your keys > 'Add code to get new key' yourself. " +
+                "QuizBot types the saved codes one by one and presses 'Check the code' " +
+                "(stops after 10 failures in a row). Tried codes are removed from the saved list.\n"
         })
 
         button("Dump the next screen to the log (diagnostics)") {
@@ -164,6 +183,12 @@ class MainActivity : Activity() {
         root.addView(logView)
 
         setContentView(ScrollView(this).apply { addView(root, MATCH_PARENT, WRAP_CONTENT) })
+
+        // Android 13+: ask once so "keys collected" can show as a notification.
+        if (Build.VERSION.SDK_INT >= 33 &&
+            checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 1)
+        }
     }
 
     private val statusTicker = object : Runnable {
@@ -204,5 +229,8 @@ class MainActivity : Activity() {
         if (toggle.isChecked != running) toggle.isChecked = running   // bot may have stopped itself
         val collecting = prefs.getBoolean(QuizService.KEY_COLLECT, false)
         if (collectToggle.isChecked != collecting) collectToggle.isChecked = collecting
+        val entering = prefs.getBoolean(QuizService.KEY_ENTER, false)
+        if (enterToggle.isChecked != entering) enterToggle.isChecked = entering
+        storedView.text = "Saved keys ready to enter: ${KeyCollector.storedCodes(prefs).size}"
     }
 }
