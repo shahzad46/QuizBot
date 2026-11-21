@@ -600,9 +600,15 @@
  {
   "keys": [
    "day of arafah",
-   "standing at arafah"
+   "standing at arafah",
+   "day of arafat",
+   "standing at arafat",
+   "stand at arafat"
   ],
   "a": [
+   "ninth day of Dhul-Hijjah",
+   "9th of Dhul-Hijjah",
+   "ninth",
    "9 Dhul Hijjah",
    "9th of Dhul Hijjah",
    "9"
@@ -1483,6 +1489,111 @@
   "a": [
    "Safa",
    "As-Safa"
+  ]
+ },
+ {
+  "keys": [
+   "stone in mina",
+   "throw in mina",
+   "throw pebbles",
+   "pebbles at",
+   "days of tashriq",
+   "stoned during",
+   "stone during",
+   "stoning"
+  ],
+  "a": [
+   "The jamarat, with pebbles",
+   "jamarat"
+  ]
+ },
+ {
+  "keys": [
+   "first to expand the sacred mosque",
+   "first to expand the grand mosque",
+   "first expansion of the sacred mosque",
+   "first expansion of the grand mosque",
+   "first to expand masjid al haram",
+   "first to enlarge the sacred mosque",
+   "first to enlarge the grand mosque",
+   "expanded the sacred mosque",
+   "expanded the grand mosque"
+  ],
+  "a": [
+   "Umar ibn al-Khattab",
+   "Umar"
+  ]
+ },
+ {
+  "keys": [
+   "hijr ismail",
+   "hijr ismael",
+   "hijr isma il",
+   "al hatim",
+   "the hatim"
+  ],
+  "a": [
+   "The Holy Kaaba",
+   "Kaaba"
+  ]
+ },
+ {
+  "keys": [
+   "mount did the prophet climb",
+   "prophet climbed",
+   "climbed to call",
+   "called out to the tribes of quraysh",
+   "warn your closest kinsmen",
+   "warn your nearest kinsmen"
+  ],
+  "a": [
+   "Safa",
+   "As-Safa"
+  ]
+ },
+ {
+  "keys": [
+   "tawaf al qudum",
+   "arrival tawaf",
+   "tawaf of arrival",
+   "tawaf upon arrival",
+   "greeting tawaf",
+   "welcome tawaf",
+   "arriving in makkah",
+   "arriving in mecca",
+   "first arrives"
+  ],
+  "a": [
+   "Tawaf al-Qudum (arrival tawaf)",
+   "Tawaf al-Qudum",
+   "arrival tawaf"
+  ]
+ },
+ {
+  "keys": [
+   "enters the house of",
+   "entered the house of",
+   "enter the house of",
+   "whoever enters",
+   "would be safe",
+   "will be safe"
+  ],
+  "a": [
+   "Abu Sufyan"
+  ]
+ },
+ {
+  "keys": [
+   "mother of all the prophets children",
+   "mother of the prophets children",
+   "mother of all his children",
+   "children except ibrahim",
+   "bore the prophet s children",
+   "bore the prophets children"
+  ],
+  "a": [
+   "Khadijah bint Khuwaylid",
+   "Khadijah"
   ]
  }
 ]
