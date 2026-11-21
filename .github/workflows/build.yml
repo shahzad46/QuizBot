@@ -6,6 +6,7 @@ on:
     paths-ignore:
       - "app/src/main/assets/answers.json"   # answer-only changes are downloaded by the app, no new APK needed
       - "learned/**"                         # phones' learned answers, no new APK needed
+  pull_request:                            # build only (no release) to check that it compiles
   workflow_dispatch:
 
 permissions:
@@ -36,6 +37,7 @@ jobs:
           path: app/build/outputs/apk/debug/app-debug.apk
 
       - name: Publish as a release (direct download link)
+        if: github.event_name != 'pull_request'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |

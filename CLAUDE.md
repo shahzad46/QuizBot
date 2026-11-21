@@ -31,10 +31,14 @@ Hobby Android app that plays the **Nusuk** app's daily Umrah-draw quiz on the ow
   token (fine-grained PAT, Contents: read & write on this repo) merges its learned answers in:
   dedup by normalised question, new answer wordings appended, questions already in the main list
   skipped, optimistic concurrency via the file `sha` with retries on 409/422.
-- `KeyCollector.kt` — "Get new keys": opens nusukkey.xyz in the browser, reads the featured code and
-  the "More codes" list (taps **Show 20 new codes**), gathers N codes (default 50), then types them
-  one by one into Nusuk's **Your keys** → "Add code to get new key" → **Check the code**; stops after
-  10 failures in a row. Do NOT call nusukkey.xyz's internal API — only use the page like a person.
+- `KeyCollector.kt` — "Get new keys", two steps the user starts separately:
+  **1. Collect keys** opens nusukkey.xyz once, reads the featured code and the "More codes" list
+  (taps **Show 20 new codes** until no new codes appear, max 4 min, max 500 saved), saves them in prefs
+  (`stored_codes`), shows a notification "N keys collected" and switches itself off.
+  **2. Enter keys**: the user opens Nusuk's **Your keys** → "Add code to get new key" page themselves; the bot
+  waits for the code box + **Check the code**, types each saved code (paste fallback) and checks it; tried
+  codes leave the list; stops after 10 failures in a row. Do NOT call nusukkey.xyz's internal API — only use
+  the page like a person.
 - `MainActivity.kt` — control panel built in code (no layout XML).
 - `BotLog.kt` — the log shown in the app (newest first). Users paste it into chat; it's the main debug tool.
 
