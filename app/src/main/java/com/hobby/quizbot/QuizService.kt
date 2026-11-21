@@ -43,6 +43,12 @@ class QuizService : AccessibilityService() {
     private var pendingUnknown: Pair<String, List<String>>? = null   // question waiting for your tap
     private var pendingRects: List<Rect> = emptyList()               // where its options are on screen
     private var pendingLearn: Pair<String, String>? = null           // (question, option you tapped)
+    private var pendingCheckRect: Rect? = null                       // "Check your answer" button
+    private var baseFingerprints: List<String> = emptyList()         // how each option looked before your tap
+    private var tapFrozen = false                                    // you pressed Check: stop updating
+    private var lastEventIdx = -1                                    // option the latest screen change was in
+    private val fingerprintCheck = Runnable { checkFingerprints() }
+    private var pendingSince = 0L                                    // when the unknown question appeared
     private var lastBotQuestion: String? = null
 
     // Poll the screen regularly instead of waiting for it to "settle":
@@ -96,19 +102,84 @@ class QuizService : AccessibilityService() {
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         event ?: return
         if (event.packageName == packageName) return
-        if (event.eventType != AccessibilityEvent.TYPE_VIEW_CLICKED) return
-
-        // Remember which option you tapped on an unknown question.
         val (q, opts) = pendingUnknown ?: return
-        val clicked = clickedText(event)
-        var i = opts.indexOfFirst { AnswerBank.norm(it) == AnswerBank.norm(clicked) }
-        if (i < 0) event.source?.let { src ->
-            val r = Rect().also { src.getBoundsInScreen(it) }
-            i = pendingRects.indexOfFirst { r.contains(it.centerX(), it.centerY()) }
+        if (tapFrozen) return
+
+        val type = event.eventType
+        val r = event.source?.let { src -> Rect().also { src.getBoundsInScreen(it) } }
+
+        // A tap or change on "Check your answer" means your choice is final.
+        val check = pendingCheckRect
+        if (r != null && check != null && Rect.intersects(r, check) && r.height() <= check.height() * 3 &&
+            (type == AccessibilityEvent.TYPE_VIEW_CLICKED || type == AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED)) {
+            checkFingerprints()
+            // Only a real tap on Check makes the choice final (the button also redraws when it becomes active).
+            if (type == AccessibilityEvent.TYPE_VIEW_CLICKED && pendingLearn != null) tapFrozen = true
+            return
         }
-        if (i >= 0) {
-            pendingLearn = q to opts[i]
-            log("You chose: ${opts[i]} (saved if the result is Correct)")
+
+        // Which option did this event happen in? (by text, else by position)
+        var i = -1
+        if (type == AccessibilityEvent.TYPE_VIEW_CLICKED) {
+            val clicked = clickedText(event)
+            i = opts.indexOfFirst { AnswerBank.norm(it) == AnswerBank.norm(clicked) }
+        }
+        if (i < 0 && r != null && r.height() < 600) {
+            i = pendingRects.indexOfFirst { o ->
+                Rect(o.left - 60, o.top - 40, o.right + 60, o.bottom + 40).contains(r.centerX(), r.centerY())
+            }
+        }
+        when (type) {
+            AccessibilityEvent.TYPE_VIEW_CLICKED, AccessibilityEvent.TYPE_VIEW_SELECTED ->
+                if (i >= 0) choose(q, opts[i], "tap")
+            AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED, AccessibilityEvent.TYPE_VIEW_FOCUSED -> {
+                if (i >= 0) lastEventIdx = i
+                // The option you tapped usually redraws (new colour/border): compare how options look now.
+                handler.removeCallbacks(fingerprintCheck)
+                handler.postDelayed(fingerprintCheck, 150)
+            }
+        }
+    }
+
+    private fun choose(q: String, option: String, how: String) {
+        if (pendingLearn?.second == option) return
+        pendingLearn = q to option
+        log("You chose: $option ($how; saved if the result is Correct)")
+    }
+
+    /** What an option looks like to accessibility: state flags, size and children of its button. */
+    private fun fingerprint(n: AccessibilityNodeInfo?): String {
+        var b = n
+        var up = 0
+        while (b != null && !b.isClickable && up < 4) { b = b.parent; up++ }
+        val box = b ?: n ?: return ""
+        val sb = StringBuilder()
+        fun walk(x: AccessibilityNodeInfo?, d: Int) {
+            if (x == null || d > 3) return
+            val r = Rect().also { x.getBoundsInScreen(it) }
+            sb.append(x.className).append(x.isSelected).append(x.isChecked).append(x.isEnabled)
+                .append(if (android.os.Build.VERSION.SDK_INT >= 30) x.stateDescription else "")
+                .append(x.contentDescription).append(r.width()).append('x').append(r.height())
+                .append('#').append(x.childCount).append('|')
+            for (k in 0 until x.childCount) walk(x.getChild(k), d + 1)
+        }
+        walk(box, 0)
+        return sb.toString()
+    }
+
+    /** Compare options now vs. before your tap; exactly one changed => that's your choice. */
+    private fun checkFingerprints() {
+        val (q, opts) = pendingUnknown ?: return
+        if (tapFrozen || baseFingerprints.size != opts.size) return
+        val root = rootInActiveWindow ?: return
+        val nodes = collect(root)
+        val now = opts.map { o -> fingerprint(nodes.firstOrNull { it.norm == AnswerBank.norm(o) }?.node) }
+        if (now.any { it.isEmpty() }) return            // question no longer on screen
+        if (System.currentTimeMillis() - pendingSince < 1500) { baseFingerprints = now; return }  // still animating in
+        val changed = opts.indices.filter { now[it] != baseFingerprints[it] }
+        when {
+            changed.size == 1 -> choose(q, opts[changed[0]], "screen change")
+            changed.size > 1 && lastEventIdx in changed -> choose(q, opts[lastEventIdx], "screen change")
         }
     }
 
@@ -189,9 +260,10 @@ class QuizService : AccessibilityService() {
 
         val signature = question.norm + "|" + options.joinToString("|") { it.norm }
         if (signature == lastSignature) {               // already handled this question
-            pendingUnknown?.let { (q, _) -> options.firstOrNull { isSelected(it.node) }?.let { sel ->
-                if (pendingLearn?.second != sel.text) { pendingLearn = q to sel.text; log("You chose: ${sel.text}") }
-            } }
+            pendingUnknown?.let { (q, _) ->
+                options.firstOrNull { isSelected(it.node) }?.let { sel -> choose(q, sel.text, "selected") }
+                    ?: checkFingerprints()
+            }
             return
         }
         lastSignature = signature
@@ -204,6 +276,11 @@ class QuizService : AccessibilityService() {
         if (hit == null) {
             pendingUnknown = question.text to optTexts
             pendingRects = options.map { Rect(it.rect) }
+            pendingCheckRect = Rect(check.rect)
+            baseFingerprints = options.map { fingerprint(it.node) }
+            tapFrozen = false
+            lastEventIdx = -1
+            pendingSince = System.currentTimeMillis()
             val key = prefs.getString(KEY_GEMINI_KEY, "").orEmpty().trim()
             val useGemini = prefs.getBoolean(KEY_GEMINI_ON, false) && key.isNotEmpty()
             val useWeb = prefs.getBoolean(KEY_WEB_ON, true)
@@ -238,11 +315,18 @@ class QuizService : AccessibilityService() {
             if (useWeb) try { WebLookup.answer(q, opts)?.let { idx = it.index; how = it.how } }
                         catch (e: Exception) { problems += "Quran search: ${e.message}" }
             // 2) Gemini, if a working key is set up.
-            if (idx == null && useGemini) try {
+            val cooling = System.currentTimeMillis() < prefs.getLong(KEY_GEMINI_COOLDOWN, 0L)
+            if (idx == null && useGemini && !cooling) try {
                 val r = GeminiHelper.ask(key, q, opts, prefs.getString(KEY_GEMINI_MODEL, null))
                 prefs.edit().putString(KEY_GEMINI_MODEL, r.model).apply()
                 idx = r.index; how = r.model
-            } catch (e: Exception) { problems += "Gemini: ${e.message}" }
+            } catch (e: Exception) {
+                val m = e.message.orEmpty()
+                if (m.contains("429") || m.contains("404")) {
+                    prefs.edit().putLong(KEY_GEMINI_COOLDOWN, System.currentTimeMillis() + 6 * 3600_000L).apply()
+                    problems += "Gemini: this key has no free quota right now; not trying again for 6 hours"
+                } else problems += "Gemini: ${m.take(150)}"
+            }
             val found = idx
             if (found == null) handler.post {
                 log("Not found online${if (problems.isEmpty()) "" else " (" + problems.joinToString("; ") + ")"} - answer it yourself; it's saved if Correct.")
@@ -293,6 +377,8 @@ class QuizService : AccessibilityService() {
             }
             pendingLearn = null
             pendingUnknown = null
+            tapFrozen = false
+            baseFingerprints = emptyList()
         }
         if (stopIfDone(keys)) return
         act("play-again") { log("Play again"); lastSignature = null; click(playAgain) }
@@ -409,6 +495,7 @@ class QuizService : AccessibilityService() {
         const val KEY_GEMINI_ON = "gemini_on"
         const val KEY_GEMINI_MODEL = "gemini_model"
         const val KEY_WEB_ON = "web_lookup_on"
+        const val KEY_GEMINI_COOLDOWN = "gemini_cooldown_until"
         const val KEY_COLLECT_TARGET = "collect_target"
         private const val TICK_MS = 1200L
 
