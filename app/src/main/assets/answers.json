@@ -322,7 +322,12 @@
   "keys": [
    "verses in surah al-fatihah",
    "verses in al-fatihah",
-   "verses does al-fatihah"
+   "verses does al-fatihah",
+   "verses are in surat al fatiha",
+   "verses in surat al fatiha",
+   "verses in surah al fatiha",
+   "verses are in surah al fatihah",
+   "verses are in al fatiha"
   ],
   "a": [
    "7",
@@ -508,7 +513,9 @@
   "keys": [
    "uncle who raised",
    "uncle who took care",
-   "uncle who protected"
+   "uncle who protected",
+   "uncle took care",
+   "took care of the prophet after"
   ],
   "a": [
    "Abu Talib"
@@ -561,7 +568,9 @@
   "keys": [
    "khalilullah",
    "friend of allah",
-   "intimate friend of allah"
+   "intimate friend of allah",
+   "khalil al rahman",
+   "friend of the most merciful"
   ],
   "a": [
    "Ibrahim",
@@ -1086,6 +1095,394 @@
    "Yusuf (Joseph)",
    "Yusuf",
    "Joseph"
+  ]
+ },
+ {
+  "keys": [
+   "god made the kaaba the sacred house",
+   "made the kaaba the sacred house",
+   "kaaba the sacred house"
+  ],
+  "a": [
+   "A support (standing) for the people",
+   "A support for the people"
+  ]
+ },
+ {
+  "keys": [
+   "beneath the green dome",
+   "under the green dome",
+   "lies beneath the green dome"
+  ],
+  "a": [
+   "The Noble Prophet's Chamber",
+   "Prophet's Chamber"
+  ]
+ },
+ {
+  "keys": [
+   "is the seal of the prophets",
+   "mean that the prophet is the seal"
+  ],
+  "a": [
+   "last of the prophets"
+  ]
+ },
+ {
+  "keys": [
+   "dajjal",
+   "antichrist"
+  ],
+  "a": [
+   "Mecca and Medina",
+   "Makkah and Madinah"
+  ]
+ },
+ {
+  "keys": [
+   "city did the prophet die",
+   "where did the prophet die",
+   "city did the prophet pass away"
+  ],
+  "a": [
+   "Medina",
+   "Madinah"
+  ]
+ },
+ {
+  "keys": [
+   "name mecca mentioned",
+   "mecca mentioned explicitly",
+   "makkah mentioned explicitly"
+  ],
+  "a": [
+   "Al-Fath"
+  ]
+ },
+ {
+  "keys": [
+   "migrate from mecca before the hijra",
+   "migrated from mecca before the hijra",
+   "migrate before the hijra to medina"
+  ],
+  "a": [
+   "Abyssinia"
+  ]
+ },
+ {
+  "keys": [
+   "cemetery of the martyrs of uhud",
+   "martyrs of uhud buried"
+  ],
+  "a": [
+   "At the foot of Mount Uhud",
+   "foot of Mount Uhud"
+  ]
+ },
+ {
+  "keys": [
+   "how many muslims fought at badr",
+   "muslims fought at badr",
+   "muslims at badr"
+  ],
+  "a": [
+   "313",
+   "Three hundred and some (313)"
+  ]
+ },
+ {
+  "keys": [
+   "excellent example",
+   "good example",
+   "uswatun hasanah"
+  ],
+  "a": [
+   "Al-Ahzab"
+  ]
+ },
+ {
+  "keys": [
+   "city did the revelation",
+   "revelation to the prophet begin",
+   "revelation to the prophet began"
+  ],
+  "a": [
+   "Mecca",
+   "Makkah"
+  ]
+ },
+ {
+  "keys": [
+   "hardship and severity of medina",
+   "endures the hardship",
+   "patient with the hardship of medina"
+  ],
+  "a": [
+   "intercessor or be a witness",
+   "intercessor"
+  ]
+ },
+ {
+  "keys": [
+   "journey to taif",
+   "accompanied the prophet on his journey to taif",
+   "went with the prophet to taif"
+  ],
+  "a": [
+   "Zayd ibn Harithah",
+   "Zayd"
+  ]
+ },
+ {
+  "keys": [
+   "together with abraham",
+   "together with ibrahim",
+   "foundations of the house the kaaba together"
+  ],
+  "a": [
+   "Ishmael",
+   "Ismail",
+   "Isma'il"
+  ]
+ },
+ {
+  "keys": [
+   "miqat of the people of yemen",
+   "miqat for the people of yemen",
+   "miqat of yemen"
+  ],
+  "a": [
+   "Yalamlam"
+  ]
+ },
+ {
+  "keys": [
+   "throne of the most merciful to shake",
+   "throne of the most merciful shook",
+   "throne shook",
+   "throne to shake"
+  ],
+  "a": [
+   "Sa'd ibn Mu'adh",
+   "Sa'd ibn Muadh"
+  ]
+ },
+ {
+  "keys": [
+   "which month was the conquest",
+   "month was the conquest of mecca",
+   "month of the conquest",
+   "month was mecca conquered"
+  ],
+  "a": [
+   "Ramadan"
+  ]
+ },
+ {
+  "keys": [
+   "battle took place at mount uhud",
+   "battle at mount uhud",
+   "battle took place near mount uhud"
+  ],
+  "a": [
+   "Battle of Uhud",
+   "Uhud"
+  ]
+ },
+ {
+  "keys": [
+   "engraved on the prophet",
+   "seal ring",
+   "signet ring"
+  ],
+  "a": [
+   "Muhammad, Messenger of Allah",
+   "Muhammad Messenger of Allah"
+  ]
+ },
+ {
+  "keys": [
+   "recited on friday",
+   "recommended to be recited on friday",
+   "read on friday"
+  ],
+  "a": [
+   "Al-Kahf"
+  ]
+ },
+ {
+  "keys": [
+   "year of sorrow",
+   "am al huzn",
+   "year of grief"
+  ],
+  "a": [
+   "The year in which Khadijah and Abu Talib died",
+   "Khadijah and Abu Talib died"
+  ]
+ },
+ {
+  "keys": [
+   "color of the famous dome",
+   "colour of the famous dome",
+   "color of the dome",
+   "colour of the dome"
+  ],
+  "a": [
+   "Green"
+  ]
+ },
+ {
+  "keys": [
+   "longest verse"
+  ],
+  "a": [
+   "verse of debt",
+   "Ayat al-Dayn"
+  ]
+ },
+ {
+  "keys": [
+   "arafat located within the boundaries of the haram",
+   "arafat within the haram",
+   "arafat inside the haram"
+  ],
+  "a": [
+   "outside the boundaries",
+   "No"
+  ]
+ },
+ {
+  "keys": [
+   "prayer in the prophets mosque",
+   "prayer in the prophet s mosque",
+   "prayer in masjid an nabawi"
+  ],
+  "a": [
+   "One thousand prayers",
+   "1000 prayers",
+   "1,000"
+  ]
+ },
+ {
+  "keys": [
+   "khadijahs cousin",
+   "khadijah s cousin",
+   "namus",
+   "cousin of khadijah"
+  ],
+  "a": [
+   "Waraqah ibn Nawfal",
+   "Waraqah"
+  ]
+ },
+ {
+  "keys": [
+   "stay among his people",
+   "how long did noah",
+   "how long did nuh",
+   "noah stay among"
+  ],
+  "a": [
+   "950 years",
+   "950"
+  ]
+ },
+ {
+  "keys": [
+   "three sacred sites",
+   "sacred sites mashar",
+   "mashar in hajj",
+   "masha ir"
+  ],
+  "a": [
+   "Mina, Muzdalifah, and Arafat",
+   "Mina Muzdalifah and Arafat"
+  ]
+ },
+ {
+  "keys": [
+   "whom does the visitor greet",
+   "visitor greet after greeting the prophet"
+  ],
+  "a": [
+   "Abu Bakr and Umar"
+  ]
+ },
+ {
+  "keys": [
+   "glad tidings of paradise",
+   "promised paradise in a single hadith",
+   "given glad tidings of paradise"
+  ],
+  "a": [
+   "Ten",
+   "10"
+  ]
+ },
+ {
+  "keys": [
+   "god and his angels send blessings",
+   "allah and his angels send blessings",
+   "angels send blessings upon the prophet"
+  ],
+  "a": [
+   "Al-Ahzab"
+  ]
+ },
+ {
+  "keys": [
+   "famous mountain in arafat",
+   "mountain in arafat",
+   "mount of mercy"
+  ],
+  "a": [
+   "Jabal al-Rahmah",
+   "Jabal ar-Rahmah"
+  ]
+ },
+ {
+  "keys": [
+   "who are the ansar",
+   "ansar helpers",
+   "the ansar"
+  ],
+  "a": [
+   "people of Medina who sheltered",
+   "people of Medina"
+  ]
+ },
+ {
+  "keys": [
+   "immediately after the conquest",
+   "battle after the conquest of makkah",
+   "battle after the conquest of mecca"
+  ],
+  "a": [
+   "Battle of Hunayn",
+   "Hunayn"
+  ]
+ },
+ {
+  "keys": [
+   "say he is god the one",
+   "say he is allah the one",
+   "qul huwa allahu ahad"
+  ],
+  "a": [
+   "Al-Ikhlas"
+  ]
+ },
+ {
+  "keys": [
+   "performing sai begin",
+   "does sai begin",
+   "sai begin",
+   "sai start"
+  ],
+  "a": [
+   "Safa",
+   "As-Safa"
   ]
  }
 ]
