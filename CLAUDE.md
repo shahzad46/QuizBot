@@ -33,7 +33,9 @@ Hobby Android app that plays the **Nusuk** app's daily Umrah-draw quiz on the ow
   skipped, optimistic concurrency via the file `sha` with retries on 409/422.
 - `KeyCollector.kt` — "Get new keys", two steps the user starts separately:
   **1. Collect keys** opens nusukkey.xyz once, reads the featured code and the "More codes" list
-  (taps **Show 20 new codes** until no new codes appear, max 4 min, max 500 saved), saves them in prefs
+  (codes are found *inside* longer texts, e.g. "NG-ab12CD34 · 206 uses Open"; the site has no "Show 20 new codes"
+  button any more, so it reloads the page until no new codes appear; max 4 min, max 500 saved; if nothing is
+  found after 15 s it dumps the browser screen to the log), saves them in prefs
   (`stored_codes`), shows a notification "N keys collected" and switches itself off.
   **2. Enter keys**: the user opens Nusuk's **Your keys** → "Add code to get new key" page themselves; the bot
   waits for the code box + **Check the code**, types each saved code (paste fallback) and checks it; tried
