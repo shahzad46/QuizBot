@@ -41,6 +41,7 @@ class QuizService : AccessibilityService() {
     private var lastResultLogged: String? = null
 
     private var pendingUnknown: Pair<String, List<String>>? = null   // question waiting for your tap
+    private var pendingRects: List<Rect> = emptyList()               // where its options are on screen
     private var pendingLearn: Pair<String, String>? = null           // (question, option you tapped)
     private var lastBotQuestion: String? = null
 
@@ -100,7 +101,11 @@ class QuizService : AccessibilityService() {
         // Remember which option you tapped on an unknown question.
         val (q, opts) = pendingUnknown ?: return
         val clicked = clickedText(event)
-        val i = opts.indexOfFirst { AnswerBank.norm(it) == AnswerBank.norm(clicked) }
+        var i = opts.indexOfFirst { AnswerBank.norm(it) == AnswerBank.norm(clicked) }
+        if (i < 0) event.source?.let { src ->
+            val r = Rect().also { src.getBoundsInScreen(it) }
+            i = pendingRects.indexOfFirst { r.contains(it.centerX(), it.centerY()) }
+        }
         if (i >= 0) {
             pendingLearn = q to opts[i]
             log("You chose: ${opts[i]} (saved if the result is Correct)")
@@ -139,13 +144,13 @@ class QuizService : AccessibilityService() {
             return
         }
 
-        // 2) Question screen
-        val check = nodes.firstOrNull { it.norm in CHECK_WORDS }
-        if (check != null) { handleQuestion(nodes, check); return }
-
-        // 3) Result screen ("Correct! ..." / "Play again")
+        // 2) Result screen ("Correct! ..." / "Play again") - checked first, it can sit on top of the question
         val playAgain = nodes.firstOrNull { it.norm in PLAY_AGAIN_WORDS }
         if (playAgain != null) { handleResult(nodes, playAgain, keys); return }
+
+        // 3) Question screen
+        val check = nodes.firstOrNull { it.norm in CHECK_WORDS }
+        if (check != null) { handleQuestion(nodes, check); return }
 
         // 4) "Choose a door"
         val header = nodes.firstOrNull { it.norm == "choose a door" }
@@ -183,7 +188,12 @@ class QuizService : AccessibilityService() {
         if (options.size < 2) return
 
         val signature = question.norm + "|" + options.joinToString("|") { it.norm }
-        if (signature == lastSignature) return          // already handled this question
+        if (signature == lastSignature) {               // already handled this question
+            pendingUnknown?.let { (q, _) -> options.firstOrNull { isSelected(it.node) }?.let { sel ->
+                if (pendingLearn?.second != sel.text) { pendingLearn = q to sel.text; log("You chose: ${sel.text}") }
+            } }
+            return
+        }
         lastSignature = signature
         pendingUnknown = null
         pendingLearn = null
@@ -193,6 +203,7 @@ class QuizService : AccessibilityService() {
         val hit = bank.answer(question.text, optTexts)
         if (hit == null) {
             pendingUnknown = question.text to optTexts
+            pendingRects = options.map { Rect(it.rect) }
             log("UNKNOWN: \"${question.text}\"\n   options: ${optTexts.joinToString(" | ")}\n   -> tap the answer and Check yourself; it's saved if Correct.")
             toast("QuizBot: new question - answer it yourself")
             return
@@ -222,6 +233,8 @@ class QuizService : AccessibilityService() {
                 headline != null -> "Result: \"${headline.text}\""
                 else -> "Result screen (no headline found)"
             })
+            if (pendingLearn == null && pendingUnknown != null)
+                log("Couldn't tell which option you tapped, so this answer wasn't saved.")
             pendingLearn?.let { (q, a) ->
                 if (correct) { bank.learn(q, a); log("LEARNED: \"$q\" -> $a") }
                 else log("Not saved (answer wasn't confirmed correct): $a")
@@ -277,7 +290,8 @@ class QuizService : AccessibilityService() {
 
     /** The key counter is the small number in the top bar. */
     private fun keyCount(nodes: List<TextNode>): Int? =
-        nodes.firstOrNull { it.rect.top < 200 && it.text.trim().matches(Regex("\\d{1,3}")) }?.text?.trim()?.toIntOrNull()
+        nodes.firstOrNull { it.rect.top < resources.displayMetrics.heightPixels * 0.12 && it.text.trim().matches(Regex("\\d{1,3}")) }
+            ?.text?.trim()?.toIntOrNull()
 
     fun dump(pkg: String, nodes: List<TextNode>) {
         log("SCREEN DUMP ($pkg), ${nodes.size} text items:\n" +
@@ -308,6 +322,16 @@ class QuizService : AccessibilityService() {
         }
         walk(root, 0)
         return out.sortedWith(compareBy({ it.rect.top }, { it.rect.left }))
+    }
+
+    /** True if the option (or the button around it) is marked selected/checked. */
+    private fun isSelected(n: AccessibilityNodeInfo?): Boolean {
+        var x = n; var depth = 0
+        while (x != null && depth < 4) {
+            if (x.isSelected || x.isChecked) return true
+            x = x.parent; depth++
+        }
+        return false
     }
 
     /** Click via the accessibility tree; fall back to a real tap gesture at the centre. */
