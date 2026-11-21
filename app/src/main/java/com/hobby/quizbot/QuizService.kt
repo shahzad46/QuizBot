@@ -87,9 +87,14 @@ class QuizService : AccessibilityService() {
     private fun shareLearned() {
         val token = prefs.getString(KEY_GH_TOKEN, "").orEmpty().trim()
         if (token.isEmpty()) return
-        val json = bank.learnedJson()
+        val json = org.json.JSONArray(bank.learnedJson())
+        val b = bank
         Thread {
-            val msg = try { GitHubSync.upload(token, json); "Shared learned answers to GitHub." }
+            val msg = try {
+                val r = GitHubSync.upload(token, json) { b.inMainList(it) }
+                if (r.added + r.updated == 0) "Common list on GitHub already has this answer (${r.total} shared)."
+                else "Added to the common list on GitHub: ${r.added} new, ${r.updated} updated (${r.total} shared)."
+            }
                       catch (e: Exception) { "Couldn't share to GitHub: ${e.message}" }
             handler.post { log(msg) }
         }.start()

@@ -16,7 +16,7 @@ import java.text.Normalizer
  */
 class AnswerBank(private val ctx: Context) {
 
-    data class Entry(val keys: List<String>, val answers: List<String>, val learned: Boolean)
+    data class Entry(val keys: List<String>, val answers: List<String>, val learned: Boolean, val main: Boolean = false)
 
     private val entries = mutableListOf<Entry>()
     private val learnedFile get() = File(ctx.filesDir, "learned.json")
@@ -31,9 +31,9 @@ class AnswerBank(private val ctx: Context) {
         entries.clear()
         val base = remoteFile.takeIf { it.exists() }?.readText()
             ?: ctx.assets.open("answers.json").bufferedReader().use { it.readText() }
-        try { parse(base, learned = false) } catch (e: Exception) {
+        try { parse(base, learned = false, main = true) } catch (e: Exception) {
             remoteFile.delete()
-            parse(ctx.assets.open("answers.json").bufferedReader().use { it.readText() }, learned = false)
+            parse(ctx.assets.open("answers.json").bufferedReader().use { it.readText() }, learned = false, main = true)
         }
         if (sharedFile.exists()) try { parse(sharedFile.readText(), learned = false) } catch (e: Exception) { sharedFile.delete() }
         if (learnedFile.exists()) parse(learnedFile.readText(), learned = true)
@@ -63,7 +63,7 @@ class AnswerBank(private val ctx: Context) {
             try {
                 val token = ctx.getSharedPreferences(QuizService.PREFS, Context.MODE_PRIVATE)
                     .getString(QuizService.KEY_GH_TOKEN, null)
-                val shared = GitHubSync.downloadAll(token)
+                val shared = GitHubSync.download(token)
                 sharedFile.writeText(shared.toString())
                 sharedCount = shared.length()
             } catch (e: Exception) { sharedError = e.message }
@@ -76,13 +76,13 @@ class AnswerBank(private val ctx: Context) {
     var sharedError: String? = null; private set
     val learnedCount get() = entries.count { it.learned }
 
-    private fun parse(json: String, learned: Boolean) {
+    private fun parse(json: String, learned: Boolean, main: Boolean = false) {
         val arr = JSONArray(json)
         for (i in 0 until arr.length()) {
             val o = arr.getJSONObject(i)
             val keys = o.getJSONArray("keys").let { k -> (0 until k.length()).map { norm(k.getString(it)) } }
             val ans = o.getJSONArray("a").let { a -> (0 until a.length()).map { a.getString(it) } }
-            entries.add(Entry(keys.filter { it.isNotBlank() }, ans, learned))
+            entries.add(Entry(keys.filter { it.isNotBlank() }, ans, learned, main))
         }
     }
 
@@ -103,6 +103,12 @@ class AnswerBank(private val ctx: Context) {
             }
         }
         return null
+    }
+
+    /** True if the main answer list already has this exact question. */
+    fun inMainList(question: String): Boolean {
+        val k = norm(question)
+        return entries.any { it.main && it.keys.contains(k) }
     }
 
     /** Save the option you tapped for a question the bank didn't know. */

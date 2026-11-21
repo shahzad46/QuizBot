@@ -108,7 +108,7 @@ class MainActivity : Activity() {
         }
         // ---- Share learned answers between phones via GitHub
         root.addView(TextView(this).apply {
-            text = "\nShare learned answers between phones (GitHub)"
+            text = "\nCommon list of learned answers on GitHub (any phone)"
             textSize = 16f
         })
         val tokenEdit = EditText(this).apply {
@@ -124,9 +124,12 @@ class MainActivity : Activity() {
             Thread {
                 val msg = try {
                     val bank = AnswerBank(this)
-                    if (token.isNotEmpty()) GitHubSync.upload(token, bank.learnedJson())
                     val n = bank.downloadLatest()
-                    val up = if (token.isNotEmpty()) "uploaded ${bank.learnedCount} learned from this phone (${GitHubSync.deviceName()}); " else "no token, upload skipped; "
+                    bank.reload()
+                    val up = if (token.isNotEmpty()) {
+                        val r = GitHubSync.upload(token, org.json.JSONArray(bank.learnedJson())) { bank.inMainList(it) }
+                        "added ${r.added} new + ${r.updated} updated from this phone to the common list; "
+                    } else "no token, upload skipped; "
                     "Sync done: " + up + "downloaded $n list entries + ${bank.sharedCount} shared" +
                         (bank.sharedError?.let { " (shared download failed: $it)" } ?: "")
                 } catch (e: Exception) { "Sync failed: ${e.message}" }
