@@ -204,8 +204,14 @@ class QuizService : AccessibilityService() {
         if (hit == null) {
             pendingUnknown = question.text to optTexts
             pendingRects = options.map { Rect(it.rect) }
-            log("UNKNOWN: \"${question.text}\"\n   options: ${optTexts.joinToString(" | ")}\n   -> tap the answer and Check yourself; it's saved if Correct.")
-            toast("QuizBot: new question - answer it yourself")
+            val key = prefs.getString(KEY_GEMINI_KEY, "").orEmpty().trim()
+            if (prefs.getBoolean(KEY_GEMINI_ON, false) && key.isNotEmpty()) {
+                log("UNKNOWN: \"${question.text}\"\n   options: ${optTexts.joinToString(" | ")}\n   -> looking it up online (Gemini)...")
+                askOnline(key, question.text, optTexts, signature)
+            } else {
+                log("UNKNOWN: \"${question.text}\"\n   options: ${optTexts.joinToString(" | ")}\n   -> tap the answer and Check yourself; it's saved if Correct.")
+                toast("QuizBot: new question - answer it yourself")
+            }
             return
         }
 
@@ -218,6 +224,34 @@ class QuizService : AccessibilityService() {
             val btn = rootInActiveWindow?.let { r -> collect(r).firstOrNull { it.norm in CHECK_WORDS } }
             if (btn != null) click(btn) else log("Couldn't find 'Check your answer' after selecting.")
         }, 1000)
+    }
+
+    /** Ask Gemini (with Google Search) in the background, then tap its answer if the question is still on screen. */
+    private fun askOnline(key: String, q: String, opts: List<String>, signature: String) {
+        Thread {
+            val res = try { GeminiHelper.ask(key, q, opts, prefs.getString(KEY_GEMINI_MODEL, null)) }
+                      catch (e: Exception) { null.also { handler.post {
+                          log("Online lookup failed (${e.message}) - answer it yourself; it's saved if Correct.")
+                          toast("QuizBot: lookup failed - answer it yourself")
+                      } } }
+            if (res != null) handler.post {
+                prefs.edit().putString(KEY_GEMINI_MODEL, res.model).apply()
+                if (lastSignature != signature) { log("Online answer arrived too late (question changed)."); return@post }
+                val answer = opts[res.index]
+                val root = rootInActiveWindow ?: return@post
+                val target = collect(root).firstOrNull { it.norm == AnswerBank.norm(answer) }
+                    ?: run { log("Couldn't find option \"$answer\" on screen."); return@post }
+                log("   -> $answer  (online, ${res.model})")
+                lastBotQuestion = q
+                pendingLearn = q to answer          // saved to the answer bank if Nusuk says Correct
+                click(target)
+                answeredThisRun++
+                handler.postDelayed({
+                    val btn = rootInActiveWindow?.let { r -> collect(r).firstOrNull { it.norm in CHECK_WORDS } }
+                    if (btn != null) click(btn) else log("Couldn't find 'Check your answer' after selecting.")
+                }, 1000)
+            }
+        }.start()
     }
 
     private fun handleResult(nodes: List<TextNode>, playAgain: TextNode, keys: Int?) {
@@ -357,6 +391,9 @@ class QuizService : AccessibilityService() {
         const val KEY_DUMP = "dump_next"
         const val KEY_MAX = "max_answers"
         const val KEY_COLLECT = "collect_keys"
+        const val KEY_GEMINI_KEY = "gemini_key"
+        const val KEY_GEMINI_ON = "gemini_on"
+        const val KEY_GEMINI_MODEL = "gemini_model"
         const val KEY_COLLECT_TARGET = "collect_target"
         private const val TICK_MS = 1200L
 
