@@ -25,9 +25,13 @@ object GeminiHelper {
             append("Question: ").append(question).append("\n")
             options.forEachIndexed { i, o -> append(i + 1).append(") ").append(o).append("\n") }
         }
-        val order = listOfNotNull(preferredModel) + MODELS.filter { it != preferredModel }
-        var lastError = "no model available"
-        for (model in order) {
+        // Ask Google which models this key may use, then try Flash models from that list.
+        val available = try { listModels(key) } catch (e: IllegalStateException) { throw e } catch (e: Exception) { emptyList() }
+        val order = (listOfNotNull(preferredModel) + available + MODELS).distinct()
+            .filter { available.isEmpty() || it in available }
+        if (order.isEmpty()) throw IllegalStateException("this key has no Gemini Flash model available")
+        val errors = mutableListOf<String>()
+        for (model in order.take(6)) {
             try {
                 val text = call(key, model, prompt)
                 val n = Regex("\\b([1-9])\\b").find(text)?.groupValues?.get(1)?.toInt()
@@ -35,10 +39,42 @@ object GeminiHelper {
                 if (n < 1 || n > options.size) throw IllegalStateException("option $n out of range")
                 return Result(n - 1, model, text.trim())
             } catch (e: ModelUnavailable) {
-                lastError = "$model: ${e.message}"     // try the next model
+                errors += "$model: ${e.message}"     // try the next model
             }
         }
-        throw IllegalStateException(lastError)
+        throw IllegalStateException(errors.joinToString("; "))
+    }
+
+    /**
+     * Models this key can call with generateContent, best Flash ones first.
+     * Throws IllegalStateException if the key itself is rejected.
+     */
+    fun listModels(key: String): List<String> {
+        val conn = URL("https://generativelanguage.googleapis.com/v1beta/models?pageSize=200").openConnection() as HttpURLConnection
+        conn.connectTimeout = 15_000
+        conn.readTimeout = 20_000
+        conn.setRequestProperty("x-goog-api-key", key)
+        try {
+            val code = conn.responseCode
+            val text = (if (code in 200..299) conn.inputStream else conn.errorStream)?.bufferedReader()?.use { it.readText() }.orEmpty()
+            if (code == 400 || code == 401 || code == 403)
+                throw IllegalStateException("the API key was rejected (HTTP $code) - check it in QuizBot")
+            if (code !in 200..299) return emptyList()
+            val arr = JSONObject(text).optJSONArray("models") ?: return emptyList()
+            val names = (0 until arr.length()).map { arr.getJSONObject(it) }.filter { m ->
+                val methods = m.optJSONArray("supportedGenerationMethods")
+                methods != null && (0 until methods.length()).any { methods.getString(it) == "generateContent" }
+            }.map { it.getString("name").removePrefix("models/") }
+            val bad = listOf("tts", "image", "live", "audio", "embedding", "vision", "transcribe", "omni", "robotics", "computer-use")
+            return names.filter { n -> n.contains("flash") && bad.none { n.contains(it) } }
+                .sortedWith(compareBy(
+                    { if (it == "gemini-flash-latest") 0 else 1 },
+                    { if (it.contains("preview") || it.contains("exp")) 1 else 0 },
+                    { -(Regex("gemini-(\\d+(?:\\.\\d+)?)").find(it)?.groupValues?.get(1)?.toDoubleOrNull() ?: 0.0) }
+                ))
+        } finally {
+            conn.disconnect()
+        }
     }
 
     private class ModelUnavailable(msg: String) : Exception(msg)
@@ -64,7 +100,8 @@ object GeminiHelper {
                 throw IllegalStateException("the API key was rejected - check it in QuizBot")
             if (code == 403) throw IllegalStateException("the API key isn't allowed to use Gemini (HTTP 403)")
             // Model missing, not on the free tier, or over its free quota: try the next one.
-            if (code == 404 || code == 429 || code == 400 || code >= 500) throw ModelUnavailable("HTTP $code")
+            if (code == 404 || code == 429 || code == 400 || code >= 500)
+                throw ModelUnavailable("HTTP $code ${Regex("\"message\":\\s*\"([^\"]{0,90})").find(text)?.groupValues?.get(1).orEmpty()}")
             if (code !in 200..299) throw IllegalStateException("HTTP $code")
             val parts = JSONObject(text).getJSONArray("candidates").getJSONObject(0)
                 .getJSONObject("content").getJSONArray("parts")
